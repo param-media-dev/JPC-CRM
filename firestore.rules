@@ -1,0 +1,167 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: jpc_users
+    // Document ID: userId
+    // Fields:
+    //   - id: string (required)
+    //   - username: string (required)
+    //   - display_name: string (required)
+    //   - role: string (required, enum: administrator, jpc_manager, jpc_sales, jpc_cs, jpc_resume, jpc_recruiter, jpc_marketing)
+    //   - created_at: string (required, ISO 8601)
+    //
+    // Collection: jpc_candidates
+    // Document ID: candidateId
+    // Fields:
+    //   - id: string (required)
+    //   - full_name: string (required)
+    //   - phone: string (required)
+    //   - current_stage: string (required)
+    //   - created_at: string (required, ISO 8601)
+    //   - updated_at: string (required, ISO 8601)
+    //   [Other optional fields: email, location, linkedin_url, education, etc.]
+    //
+    // Collection: jpc_payments
+    // Document ID: paymentId
+    // Fields:
+    //   - id: string (required)
+    //   - candidate_id: string (required)
+    //   - part_number: number (required)
+    //   - amount: number (required)
+    //   - due_date: string (required, YYYY-MM-DD)
+    //   - status: string (required, enum: pending, paid)
+    //   - created_at: string (required, ISO 8601)
+    //
+    // [Other collections: jpc_promises, jpc_qc_checklist, jpc_followups, jpc_activity_logs]
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/jpc_users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        (exists(/databases/$(database)/documents/jpc_users/$(request.auth.uid)) && getUserData().role == 'administrator') || 
+        request.auth.token.email == "paramatwork3076@gmail.com"
+      );
+    }
+
+    function isManager() {
+      return isAuthenticated() && (
+        (exists(/databases/$(database)/documents/jpc_users/$(request.auth.uid)) && getUserData().role == 'jpc_manager') || 
+        isAdmin()
+      );
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.id is string && data.id.size() > 0 &&
+             data.username is string && data.username.size() > 0 &&
+             data.display_name is string && data.display_name.size() > 0 &&
+             data.role in ['administrator', 'jpc_manager', 'jpc_sysadmin', 'jpc_lead_gen', 'jpc_sales', 'jpc_cs', 'jpc_resume', 'jpc_recruiter', 'jpc_marketing'] &&
+             isValidDateString(data.created_at);
+    }
+
+    function isValidCandidate(data) {
+      return data.id is string && data.id.size() > 0 &&
+             data.full_name is string && data.full_name.size() > 0 &&
+             data.phone is string && data.phone.size() > 0 &&
+             data.current_stage is string &&
+             isValidDateString(data.created_at) &&
+             isValidDateString(data.updated_at);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /jpc_users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidUser(request.resource.data) && (isOwner(userId) || isAdmin());
+      allow update: if isAuthenticated() && isValidUser(request.resource.data) && (isAdmin() || (isOwner(userId) && request.resource.data.role == resource.data.role));
+      allow delete: if isAdmin();
+    }
+
+    match /jpc_candidates/{candidateId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidCandidate(request.resource.data);
+      allow update: if isAuthenticated() && isValidCandidate(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /jpc_payments/{paymentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    match /jpc_promises/{promiseId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    match /jpc_qc_checklist/{itemId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    match /jpc_followups/{followupId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAdmin();
+    }
+
+    match /jpc_activity_logs/{logId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    match /test/connection {
+      allow read: if isAuthenticated();
+    }
+  }
+}

@@ -1,0 +1,148 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A team member of the JPC CRM.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "username": { "type": "string" },
+        "display_name": { "type": "string" },
+        "role": { "type": "string", "enum": ["administrator", "jpc_manager", "jpc_sales", "jpc_cs", "jpc_resume", "jpc_recruiter", "jpc_marketing"] },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "username", "display_name", "role", "created_at"]
+    },
+    "Candidate": {
+      "title": "Candidate",
+      "description": "A job seeker in the CRM pipeline.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "full_name": { "type": "string" },
+        "phone": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "email": { "type": "string" },
+        "location": { "type": "string" },
+        "linkedin_url": { "type": "string" },
+        "education": { "type": "string" },
+        "degree": { "type": "string" },
+        "university": { "type": "string" },
+        "graduation_year": { "type": "string" },
+        "experience_years": { "type": "number" },
+        "current_company": { "type": "string" },
+        "skills": { "type": "string" },
+        "lead_source": { "type": "string" },
+        "lead_generated_by": { "type": "string" },
+        "package_name": { "type": "string" },
+        "package_amount": { "type": "number" },
+        "assigned_cs": { "type": "string" },
+        "assigned_resume": { "type": "string" },
+        "assigned_recruiter": { "type": "string" },
+        "assigned_marketing": { "type": "string" },
+        "current_stage": { "type": "string" },
+        "flags": {
+          "type": "object",
+          "properties": {
+            "is_urgent": { "type": "boolean" },
+            "is_high_value": { "type": "boolean" },
+            "needs_qc": { "type": "boolean" },
+            "needs_training": { "type": "boolean" },
+            "is_placed": { "type": "boolean" }
+          }
+        },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "not_interested_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "full_name", "phone", "current_stage", "created_at", "updated_at"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "A payment record for a candidate.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "candidate_id": { "type": "string" },
+        "part_number": { "type": "number" },
+        "amount": { "type": "number" },
+        "due_date": { "type": "string", "format": "date" },
+        "paid_on": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["pending", "paid"] },
+        "receipt_number": { "type": "string" },
+        "payment_method": { "type": "string" },
+        "notes": { "type": "string" },
+        "created_by": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "candidate_id", "part_number", "amount", "due_date", "status", "created_at"]
+    },
+    "Promise": {
+      "title": "Promise",
+      "description": "A promise made to a candidate.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "candidate_id": { "type": "string" },
+        "promise_text": { "type": "string" },
+        "made_by": { "type": "string" },
+        "stage": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "fulfilled", "broken"] },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "candidate_id", "promise_text", "made_by", "stage", "status", "created_at"]
+    },
+    "QCChecklistItem": {
+      "title": "QCChecklistItem",
+      "description": "An item in the QC call checklist for a candidate.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "candidate_id": { "type": "string" },
+        "item_label": { "type": "string" },
+        "checked": { "type": "boolean" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "candidate_id", "item_label", "checked", "created_at"]
+    },
+    "FollowUp": {
+      "title": "FollowUp",
+      "description": "A scheduled follow-up for a candidate.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "candidate_id": { "type": "string" },
+        "stage": { "type": "string" },
+        "followup_date": { "type": "string", "format": "date" },
+        "note": { "type": "string" },
+        "done": { "type": "boolean" },
+        "created_by": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "candidate_id", "followup_date", "note", "done", "created_at"]
+    },
+    "ActivityLog": {
+      "title": "ActivityLog",
+      "description": "An audit log of actions taken in the CRM.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "candidate_id": { "type": "string" },
+        "action": { "type": "string" },
+        "details": { "type": "string" },
+        "user_id": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "candidate_id", "action", "created_at"]
+    }
+  },
+  "firestore": {
+    "jpc_users": { "schema": "User", "description": "Team members." },
+    "jpc_candidates": { "schema": "Candidate", "description": "Job seekers." },
+    "jpc_payments": { "schema": "Payment", "description": "Payment records." },
+    "jpc_promises": { "schema": "Promise", "description": "Promises made to candidates." },
+    "jpc_qc_checklist": { "schema": "QCChecklistItem", "description": "QC call items." },
+    "jpc_followups": { "schema": "FollowUp", "description": "Scheduled follow-ups." },
+    "jpc_activity_logs": { "schema": "ActivityLog", "description": "Audit trail." }
+  }
+}
