@@ -8,6 +8,7 @@ import {
   addPromise,
   updatePromise,
   updateQCChecklistItem,
+  resetQCChecklist,
   addFollowUp,
   updateFollowUp,
   getUserById,
@@ -39,15 +40,25 @@ import {
   AlertCircle,
   CheckCircle2,
   FileText,
+  RotateCcw,
   User as UserIcon,
   ExternalLink,
-  Calendar
+  Calendar,
+  Video,
+  TrendingUp,
+  ShieldCheck,
+  Share2,
+  Key,
+  Copy,
+  Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { Candidate, Payment, Promise as PromiseType, QCChecklistItem, FollowUp, ActivityLog, User, Stage } from '../types';
-import { query, collection, where, onSnapshot, doc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { Candidate, Payment, Promise as PromiseType, QCChecklistItem, FollowUp, ActivityLog, User, Stage, ResumeChangeRequest, Application, InterviewRequest } from '../types';
+import { query, collection, where, onSnapshot, doc, setDoc, getDocs } from 'firebase/firestore';
+import { db, firebaseConfig } from '../firebase';
+import { initializeApp } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword, signOut as secondarySignOut, updateProfile } from 'firebase/auth';
 
 export const CandidateDetail: React.FC = () => {
   const { user, isAuthReady } = useAuth();
@@ -56,21 +67,49 @@ export const CandidateDetail: React.FC = () => {
   const params = new URLSearchParams(window.location.hash.split('?')[1]);
   const id = params.get('id');
 
+  const isCandidate = user?.role === 'candidate' || user?.role === 'jpc_candidate';
+  const isLeadGen = user?.role === 'jpc_lead_gen';
+  const canEdit = !isCandidate && !isLeadGen;
+
   const [candidate, setCandidate] = useState<Candidate | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [promises, setPromises] = useState<PromiseType[]>([]);
   const [checklist, setChecklist] = useState<QCChecklistItem[]>([]);
   const [followUps, setFollowUps] = useState<FollowUp[]>([]);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
+  const [resumeRequests, setResumeRequests] = useState<ResumeChangeRequest[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [interviews, setInterviews] = useState<InterviewRequest[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (!isAuthReady || !id) return;
 
+    // Security: Candidates can only see their own profile
+    if ((user?.role === 'candidate' || user?.role === 'jpc_candidate') && user.candidate_id !== id) {
+      showToast('Access denied. Redirecting to your profile.', 'error');
+      window.location.hash = `#candidate?id=${user.candidate_id}`;
+      return;
+    }
+
     const unsubCandidate = onSnapshot(doc(db, 'jpc_candidates', id), (doc) => {
       if (doc.exists()) {
-        setCandidate(doc.data() as Candidate);
+        const data = doc.data() as Candidate;
+        
+        // Role-based access check
+        if (user?.role === 'jpc_recruiter' && String(data.assigned_recruiter) !== String(user.id)) {
+          showToast('Access denied. This candidate is not assigned to you.', 'error');
+          window.location.hash = '#candidates';
+          return;
+        }
+        if (user?.role === 'jpc_lead_gen' && String(data.lead_generated_by) !== String(user.id)) {
+          showToast('Access denied. You did not generate this lead.', 'error');
+          window.location.hash = '#candidates';
+          return;
+        }
+
+        setCandidate(data);
         setIsLoading(false);
       }
     });
@@ -84,7 +123,7 @@ export const CandidateDetail: React.FC = () => {
     });
 
     const unsubChecklist = onSnapshot(query(collection(db, 'jpc_qc_checklist'), where('candidate_id', '==', id)), (snap) => {
-      setChecklist(snap.docs.map(d => d.data() as QCChecklistItem));
+      setChecklist(snap.docs.map(d => d.data() as QCChecklistItem).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
     });
 
     const unsubFollowUps = onSnapshot(query(collection(db, 'jpc_followups'), where('candidate_id', '==', id)), (snap) => {
@@ -92,7 +131,19 @@ export const CandidateDetail: React.FC = () => {
     });
 
     const unsubActivity = onSnapshot(query(collection(db, 'jpc_activity_logs'), where('candidate_id', '==', id)), (snap) => {
-      setActivityLogs(snap.docs.map(d => d.data() as ActivityLog).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+      setActivityLogs(snap.docs.map(d => d.data() as ActivityLog));
+    });
+
+    const unsubResume = onSnapshot(query(collection(db, 'jpc_resume_requests'), where('candidate_id', '==', id)), (snap) => {
+      setResumeRequests(snap.docs.map(d => d.data() as ResumeChangeRequest));
+    });
+
+    const unsubApps = onSnapshot(query(collection(db, 'jpc_applications'), where('candidate_id', '==', id)), (snap) => {
+      setApplications(snap.docs.map(d => d.data() as Application));
+    });
+
+    const unsubInterviews = onSnapshot(query(collection(db, 'jpc_interviews'), where('candidate_id', '==', id)), (snap) => {
+      setInterviews(snap.docs.map(d => d.data() as InterviewRequest));
     });
 
     const unsubUsers = subscribeToCollection<User>('jpc_users', (data) => {
@@ -106,6 +157,9 @@ export const CandidateDetail: React.FC = () => {
       unsubChecklist();
       unsubFollowUps();
       unsubActivity();
+      unsubResume();
+      unsubApps();
+      unsubInterviews();
       unsubUsers();
     };
   }, [isAuthReady, id]);
@@ -113,17 +167,25 @@ export const CandidateDetail: React.FC = () => {
   const salesUsers = allUsers.filter(u => u.role === 'jpc_sales');
   const csUsers = allUsers.filter(u => u.role === 'jpc_cs');
   const resumeUsers = allUsers.filter(u => u.role === 'jpc_resume');
-  const recruiterUsers = allUsers.filter(u => u.role === 'jpc_recruiter');
+  const marketingLeaders = allUsers.filter(u => u.role === 'jpc_marketing');
+  
   const marketingUsers = allUsers.filter(u => u.role === 'jpc_marketing');
 
   // Edit states
   const [isEditingPersonal, setIsEditingPersonal] = useState(false);
   const [isEditingEducation, setIsEditingEducation] = useState(false);
   const [isEditingPackage, setIsEditingPackage] = useState(false);
+  const [isGeneratingAccess, setIsGeneratingAccess] = useState(false);
+  const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
   
   const [personalForm, setPersonalForm] = useState<Partial<Candidate>>({});
   const [educationForm, setEducationForm] = useState<Partial<Candidate>>({});
   const [packageForm, setPackageForm] = useState<Partial<Candidate>>({});
+
+  const filteredRecruiters = useMemo(() => {
+    if (!packageForm.assigned_marketing_leader) return [];
+    return allUsers.filter(u => u.role === 'jpc_recruiter' && String(u.leader_id) === String(packageForm.assigned_marketing_leader));
+  }, [allUsers, packageForm.assigned_marketing_leader]);
 
   // Payment form
   const [paymentForm, setPaymentForm] = useState({
@@ -151,6 +213,80 @@ export const CandidateDetail: React.FC = () => {
     }
   }, [candidate]);
 
+  useEffect(() => {
+    if (user?.role === 'administrator' && checklist.length > 0 && (checklist.length !== 8 || !checklist.some(item => item.item_label === 'Candidate indidity Verification'))) {
+      resetQCChecklist(id!);
+    }
+  }, [checklist, id, user]);
+
+  const totalPaid = payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.amount, 0);
+  const paymentProgress = (candidate?.package_amount || 0) > 0 ? (totalPaid / (candidate?.package_amount || 1)) * 100 : 0;
+  const nextPayment = payments.find(p => p.status === 'pending');
+
+  const combinedLogs = useMemo(() => {
+    const logs = activityLogs.map(log => ({
+      id: log.id,
+      action: log.action,
+      details: log.details,
+      user_id: log.user_id,
+      created_at: log.created_at,
+      type: 'activity'
+    }));
+
+    const resumeLogs = resumeRequests.map(req => ({
+      id: req.id,
+      action: 'Resume Change Request',
+      details: `Status: ${req.status.replace('_', ' ')}. Details: ${req.details}`,
+      user_id: req.recruiter_id,
+      created_at: req.created_at,
+      type: 'resume'
+    }));
+
+    const appLogs = applications.map(app => ({
+      id: app.id,
+      action: 'Job Application',
+      details: `Applied to ${app.company_name}.`,
+      user_id: app.recruiter_id,
+      created_at: app.created_at,
+      type: 'application'
+    }));
+
+    const interviewLogs = interviews.map(int => ({
+      id: int.id,
+      action: 'Interview Support',
+      details: `Status: ${int.status.replace('_', ' ')}. ${int.scheduled_at ? `Scheduled: ${new Date(int.scheduled_at).toLocaleString()}` : ''}`,
+      user_id: int.proxy_id || int.cs_id,
+      created_at: int.created_at,
+      type: 'interview'
+    }));
+
+    return [...logs, ...resumeLogs, ...appLogs, ...interviewLogs].sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+  }, [activityLogs, resumeRequests, applications, interviews]);
+
+  const appStats = useMemo(() => {
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+    
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    
+    const dayApps = applications.filter(a => a.applied_at === todayStr);
+    const weekApps = applications.filter(a => new Date(a.applied_at) >= startOfWeek);
+    const monthApps = applications.filter(a => new Date(a.applied_at) >= startOfMonth);
+    
+    return {
+      day: dayApps.length,
+      week: weekApps.length,
+      month: monthApps.length,
+      lifetime: applications.length
+    };
+  }, [applications]);
+
   if (isLoading) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -170,6 +306,105 @@ export const CandidateDetail: React.FC = () => {
       </div>
     );
   }
+
+  const hasPortal = allUsers.some(u => u.candidate_id === candidate.id);
+
+  const generateRandomPassword = () => {
+    const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
+    let password = "";
+    for (let i = 0; i < 12; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return password;
+  };
+
+  const handleGenerateAccess = async () => {
+    if (!candidate.email) {
+      showToast('Candidate must have an email address to generate access.', 'error');
+      return;
+    }
+
+    setIsGeneratingAccess(true);
+    const password = generateRandomPassword();
+
+    try {
+      // 1. Create Firebase Auth user using a secondary app instance
+      // This allows creating a user without logging out the current admin
+      const secondaryApp = initializeApp(firebaseConfig, 'SecondaryCandidate');
+      const secondaryAuth = getAuth(secondaryApp);
+      
+      try {
+        const { user: fUser } = await createUserWithEmailAndPassword(
+          secondaryAuth, 
+          candidate.email, 
+          password
+        );
+        await updateProfile(fUser, { displayName: candidate.full_name });
+        
+        // 2. Create user record in Firestore (jpc_users)
+        const newUser: User = {
+          id: fUser.uid,
+          username: candidate.email.split('@')[0],
+          display_name: candidate.full_name,
+          role: 'candidate',
+          candidate_id: candidate.id,
+          created_at: new Date().toISOString()
+        };
+
+        await setDoc(doc(db, 'jpc_users', fUser.uid), newUser);
+        
+        // 3. Update candidate document to remove temp password if any
+        await saveCandidate({
+          ...candidate,
+          temp_portal_password: null
+        } as Candidate, user?.id || null);
+
+        await secondarySignOut(secondaryAuth);
+        
+        setGeneratedPassword(password);
+        showToast('Portal access created successfully!', 'success');
+        await logActivity(candidate.id, 'Portal access generated', `Login credentials created for ${candidate.email}`, user?.id || null);
+      } catch (authError: any) {
+        console.error('Auth creation error:', authError);
+        let message = 'Failed to create portal access';
+        
+        if (authError.code === 'auth/email-already-in-use') {
+          // Try to find if this user already exists in Firestore
+          const usersSnap = await getDocs(query(collection(db, 'jpc_users'), where('email', '==', candidate.email)));
+          
+          if (!usersSnap.empty) {
+            const existingUser = usersSnap.docs[0].data() as User;
+            
+            // If they exist but aren't linked to this candidate, link them
+            if (existingUser.candidate_id !== candidate.id) {
+              await setDoc(doc(db, 'jpc_users', String(existingUser.id)), { 
+                ...existingUser, 
+                candidate_id: candidate.id,
+                role: 'candidate' // Ensure they have the candidate role
+              });
+              
+              showToast('Existing account linked to this candidate!', 'success');
+              await logActivity(candidate.id, 'Portal access linked', `Existing account (${candidate.email}) was linked to this candidate profile`, user?.id || null);
+              setIsGeneratingAccess(false);
+              return;
+            } else {
+              message = 'This candidate already has portal access.';
+            }
+          } else {
+            message = 'This email is already registered in our system. Please use a different email or contact support to link the existing account.';
+          }
+        } else if (authError.code === 'auth/weak-password') {
+          message = 'Password should be at least 6 characters.';
+        }
+        showToast(message, 'error');
+      }
+    } catch (error) {
+      console.error('Generate access error:', error);
+      showToast('An error occurred while creating access', 'error');
+    } finally {
+      setIsGeneratingAccess(false);
+    }
+  };
 
   const handleSavePersonal = async () => {
     await saveCandidate({ ...candidate, ...personalForm } as Candidate, user?.id || null);
@@ -221,6 +456,19 @@ export const CandidateDetail: React.FC = () => {
     await logActivity(candidate.id, 'QC Item toggled', `QC Item '${item.item_label}' was toggled.`, user?.id || null);
   };
 
+  const handleUpdateQCValue = async (item: QCChecklistItem, value: string) => {
+    await updateQCChecklistItem({ ...item, value });
+  };
+
+  const handleResetChecklist = async () => {
+    if (!candidate) return;
+    if (window.confirm('This will delete current checklist items and reset to the new 8-item checklist. Continue?')) {
+      await resetQCChecklist(candidate.id);
+      await logActivity(candidate.id, 'QC Checklist Reset', 'Checklist was reset to the new 8-item format.', user?.id || null);
+      showToast('Checklist reset successfully', 'success');
+    }
+  };
+
   const handleAddPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!paymentForm.amount || !paymentForm.due_date) {
@@ -267,24 +515,81 @@ export const CandidateDetail: React.FC = () => {
   const handleAddFollowUp = async () => {
     if (!followUpForm.date || !followUpForm.note) return;
     await addFollowUp({
-      candidate_id: candidate.id,
-      stage: candidate.current_stage,
+      candidate_id: candidate!.id,
+      stage: candidate!.current_stage,
       followup_date: followUpForm.date,
       note: followUpForm.note,
       done: false,
       created_by: user?.id || null
     });
-    await logActivity(candidate.id, 'Follow-up scheduled', `Scheduled for ${followUpForm.date}`, user?.id || null);
+    await logActivity(candidate!.id, 'Follow-up scheduled', `Scheduled for ${followUpForm.date}`, user?.id || null);
     setFollowUpForm({ date: '', note: '' });
     showToast('Follow-up scheduled', 'success');
   };
 
-  const totalPaid = payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.amount, 0);
-  const paymentProgress = candidate.package_amount > 0 ? (totalPaid / candidate.package_amount) * 100 : 0;
-  const nextPayment = payments.find(p => p.status === 'pending');
-
   return (
     <div className="space-y-8 pb-20">
+      {/* Password Modal */}
+      <AnimatePresence>
+        {generatedPassword && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-bg-secondary border border-border-primary rounded-3xl shadow-2xl max-w-md w-full overflow-hidden"
+            >
+              <div className="p-8 text-center">
+                <div className="w-16 h-16 bg-accent-green/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <ShieldCheck className="w-8 h-8 text-accent-green" />
+                </div>
+                <h3 className="text-2xl font-bold text-text-primary mb-2">Access Generated!</h3>
+                <p className="text-text-secondary mb-8">Copy these credentials and share them with the candidate. They can now log in directly.</p>
+                
+                <div className="space-y-4 mb-8">
+                  <div className="p-4 bg-bg-tertiary rounded-2xl border border-border-primary text-left">
+                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">Email Address</p>
+                    <p className="text-sm font-mono text-text-primary">{candidate.email}</p>
+                  </div>
+                  <div className="p-4 bg-bg-tertiary rounded-2xl border border-border-primary text-left relative group">
+                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">Generated Password</p>
+                    <p className="text-sm font-mono text-text-primary">{generatedPassword}</p>
+                    <button 
+                      onClick={() => {
+                        navigator.clipboard.writeText(generatedPassword);
+                        showToast('Password copied!', 'success');
+                      }}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-text-muted hover:text-accent-blue transition-colors"
+                    >
+                      <Copy className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  <button 
+                    onClick={() => {
+                      const message = `Hello ${candidate.full_name}, your portal is ready!\n\nLogin at: ${window.location.origin}\nEmail: ${candidate.email}\nPassword: ${generatedPassword}\n\nPlease change your password after logging in.`;
+                      navigator.clipboard.writeText(message);
+                      showToast('Full message copied to clipboard!', 'success');
+                    }}
+                    className="w-full py-4 bg-accent-blue text-white font-bold rounded-2xl hover:bg-accent-blue/90 transition-all shadow-lg shadow-accent-blue/20 flex items-center justify-center gap-2"
+                  >
+                    <Copy className="w-5 h-5" />
+                    Copy Full Invite
+                  </button>
+                  <button 
+                    onClick={() => setGeneratedPassword(null)}
+                    className="w-full py-4 bg-bg-tertiary text-text-primary font-bold rounded-2xl hover:bg-bg-tertiary/80 transition-all"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
@@ -305,6 +610,41 @@ export const CandidateDetail: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {hasPortal ? (
+            <div className="px-4 py-2 rounded-xl border border-accent-green/20 bg-accent-green/5 flex items-center gap-2 text-accent-green">
+              <ShieldCheck className="w-4 h-4" />
+              <span className="text-xs font-bold uppercase tracking-wider">Portal Active</span>
+            </div>
+          ) : (
+            !isCandidate && !isLeadGen && (
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={handleGenerateAccess}
+                  disabled={isGeneratingAccess}
+                  className="px-4 py-2 rounded-xl border border-accent-amber/20 bg-accent-amber/5 flex items-center gap-2 text-accent-amber hover:bg-accent-amber/10 transition-all disabled:opacity-50"
+                >
+                  {isGeneratingAccess ? (
+                    <div className="w-4 h-4 border-2 border-accent-amber/30 border-t-accent-amber rounded-full animate-spin" />
+                  ) : (
+                    <Key className="w-4 h-4" />
+                  )}
+                  <span className="text-xs font-bold uppercase tracking-wider">Generate Access</span>
+                </button>
+                <button 
+                  onClick={() => {
+                    const signupUrl = window.location.origin;
+                    const message = `Hello ${candidate.full_name}, your portal is ready. Please log in at ${signupUrl} using your email: ${candidate.email}`;
+                    navigator.clipboard.writeText(message);
+                    showToast('Invite message copied to clipboard!', 'success');
+                  }}
+                  className="px-4 py-2 rounded-xl border border-border-primary bg-bg-secondary flex items-center gap-2 text-text-secondary hover:text-accent-blue hover:border-accent-blue transition-all"
+                >
+                  <Share2 className="w-4 h-4" />
+                  <span className="text-xs font-bold uppercase tracking-wider">Invite</span>
+                </button>
+              </div>
+            )
+          )}
           <div className="px-4 py-2 rounded-xl border border-border-primary bg-bg-secondary flex items-center gap-2">
             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: STAGES[candidate.current_stage].color }} />
             <span className="text-sm font-bold text-text-primary uppercase tracking-wider">
@@ -330,27 +670,29 @@ export const CandidateDetail: React.FC = () => {
       )}
 
       {/* Stage Move Bar */}
-      <div className="bg-bg-secondary border border-border-primary rounded-2xl p-4 flex flex-wrap items-center gap-3">
-        <span className="text-xs font-bold text-text-muted uppercase tracking-widest mr-2">Move to Stage:</span>
-        {TRANSITIONS[candidate.current_stage].map(stageKey => (
-          <button
-            key={stageKey}
-            onClick={() => handleStageMove(stageKey as Stage)}
-            className="px-4 py-2 bg-bg-tertiary border border-border-primary rounded-xl text-sm font-bold text-text-primary hover:border-accent-blue hover:text-accent-blue transition-all flex items-center gap-2"
-          >
-            {STAGES[stageKey as Stage].icon} {STAGES[stageKey as Stage].label.split('. ')[1] || STAGES[stageKey as Stage].label}
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        ))}
-        {candidate.current_stage !== 'not_interested' && (
-          <button
-            onClick={() => handleStageMove('not_interested')}
-            className="px-4 py-2 bg-rose-500/10 border border-rose-500/20 rounded-xl text-sm font-bold text-rose-500 hover:bg-rose-500 hover:text-white transition-all ml-auto"
-          >
-            Not Interested
-          </button>
-        )}
-      </div>
+      {canEdit && (
+        <div className="bg-bg-secondary border border-border-primary rounded-2xl p-4 flex flex-wrap items-center gap-3">
+          <span className="text-xs font-bold text-text-muted uppercase tracking-widest mr-2">Move to Stage:</span>
+          {TRANSITIONS[candidate.current_stage].map(stageKey => (
+            <button
+              key={stageKey}
+              onClick={() => handleStageMove(stageKey as Stage)}
+              className="px-4 py-2 bg-bg-tertiary border border-border-primary rounded-xl text-sm font-bold text-text-primary hover:border-accent-blue hover:text-accent-blue transition-all flex items-center gap-2"
+            >
+              {STAGES[stageKey as Stage].icon} {STAGES[stageKey as Stage].label.split('. ')[1] || STAGES[stageKey as Stage].label}
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          ))}
+          {candidate.current_stage !== 'not_interested' && (
+            <button
+              onClick={() => handleStageMove('not_interested')}
+              className="px-4 py-2 bg-rose-500/10 border border-rose-500/20 rounded-xl text-sm font-bold text-rose-500 hover:bg-rose-500 hover:text-white transition-all ml-auto"
+            >
+              Not Interested
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* LEFT COLUMN */}
@@ -362,12 +704,14 @@ export const CandidateDetail: React.FC = () => {
                 <UserIcon className="w-5 h-5 text-accent-blue" />
                 Personal Information
               </h3>
-              <button 
-                onClick={() => isEditingPersonal ? handleSavePersonal() : setIsEditingPersonal(true)}
-                className="p-2 text-text-secondary hover:text-accent-blue transition-colors"
-              >
-                {isEditingPersonal ? <Save className="w-5 h-5" /> : <Edit2 className="w-5 h-5" />}
-              </button>
+              {canEdit && (
+                <button 
+                  onClick={() => isEditingPersonal ? handleSavePersonal() : setIsEditingPersonal(true)}
+                  className="p-2 text-text-secondary hover:text-accent-blue transition-colors"
+                >
+                  {isEditingPersonal ? <Save className="w-5 h-5" /> : <Edit2 className="w-5 h-5" />}
+                </button>
+              )}
             </div>
             <div className="p-6">
               {isEditingPersonal ? (
@@ -441,12 +785,14 @@ export const CandidateDetail: React.FC = () => {
                 <GraduationCap className="w-5 h-5 text-accent-purple" />
                 Education & Experience
               </h3>
-              <button 
-                onClick={() => isEditingEducation ? handleSaveEducation() : setIsEditingEducation(true)}
-                className="p-2 text-text-secondary hover:text-accent-blue transition-colors"
-              >
-                {isEditingEducation ? <Save className="w-5 h-5" /> : <Edit2 className="w-5 h-5" />}
-              </button>
+              {canEdit && (
+                <button 
+                  onClick={() => isEditingEducation ? handleSaveEducation() : setIsEditingEducation(true)}
+                  className="p-2 text-text-secondary hover:text-accent-blue transition-colors"
+                >
+                  {isEditingEducation ? <Save className="w-5 h-5" /> : <Edit2 className="w-5 h-5" />}
+                </button>
+              )}
             </div>
             <div className="p-6">
               {isEditingEducation ? (
@@ -520,12 +866,14 @@ export const CandidateDetail: React.FC = () => {
                 <Package className="w-5 h-5 text-accent-teal" />
                 Package & Team Assignment
               </h3>
-              <button 
-                onClick={() => isEditingPackage ? handleSavePackage() : setIsEditingPackage(true)}
-                className="p-2 text-text-secondary hover:text-accent-blue transition-colors"
-              >
-                {isEditingPackage ? <Save className="w-5 h-5" /> : <Edit2 className="w-5 h-5" />}
-              </button>
+              {canEdit && (
+                <button 
+                  onClick={() => isEditingPackage ? handleSavePackage() : setIsEditingPackage(true)}
+                  className="p-2 text-text-secondary hover:text-accent-blue transition-colors"
+                >
+                  {isEditingPackage ? <Save className="w-5 h-5" /> : <Edit2 className="w-5 h-5" />}
+                </button>
+              )}
             </div>
             <div className="p-6">
               {isEditingPackage ? (
@@ -553,10 +901,26 @@ export const CandidateDetail: React.FC = () => {
                     </select>
                   </div>
                   <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-text-muted uppercase">Marketing Leader (TL)</label>
+                    <select 
+                      value={packageForm.assigned_marketing_leader || ''} 
+                      onChange={e => setPackageForm({...packageForm, assigned_marketing_leader: e.target.value, assigned_recruiter: null})} 
+                      className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm"
+                    >
+                      <option value="">Select Marketing Leader</option>
+                      {marketingLeaders.map(u => <option key={u.id} value={u.id}>{u.display_name}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
                     <label className="text-[10px] font-bold text-text-muted uppercase">Assigned Recruiter</label>
-                    <select value={packageForm.assigned_recruiter || ''} onChange={e => setPackageForm({...packageForm, assigned_recruiter: e.target.value})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm">
+                    <select 
+                      value={packageForm.assigned_recruiter || ''} 
+                      onChange={e => setPackageForm({...packageForm, assigned_recruiter: e.target.value})} 
+                      className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm"
+                      disabled={!packageForm.assigned_marketing_leader}
+                    >
                       <option value="">Select Recruiter</option>
-                      {recruiterUsers.map(u => <option key={u.id} value={u.id}>{u.display_name}</option>)}
+                      {filteredRecruiters.map(u => <option key={u.id} value={u.id}>{u.display_name}</option>)}
                     </select>
                   </div>
                   <div className="space-y-1">
@@ -565,6 +929,10 @@ export const CandidateDetail: React.FC = () => {
                       <option value="">Select Marketing</option>
                       {marketingUsers.map(u => <option key={u.id} value={u.id}>{u.display_name}</option>)}
                     </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-text-muted uppercase">Profiles Count (Target Multiplier)</label>
+                    <input type="number" value={packageForm.profiles_count || 1} onChange={e => setPackageForm({...packageForm, profiles_count: Number(e.target.value)})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm" />
                   </div>
                 </div>
               ) : (
@@ -586,12 +954,20 @@ export const CandidateDetail: React.FC = () => {
                     <p className="text-text-primary font-medium">{allUsers.find(u => u.id === candidate.assigned_resume)?.display_name || '—'}</p>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Assigned Recruiter</p>
-                    <p className="text-text-primary font-medium">{allUsers.find(u => u.id === candidate.assigned_recruiter)?.display_name || '—'}</p>
+                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Marketing Leader (TL)</p>
+                    <p className="text-text-primary font-medium">{allUsers.find(u => String(u.id) === String(candidate.assigned_marketing_leader))?.display_name || '—'}</p>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Marketing Leader</p>
-                    <p className="text-text-primary font-medium">{allUsers.find(u => u.id === candidate.assigned_marketing)?.display_name || '—'}</p>
+                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Assigned Recruiter</p>
+                    <p className="text-text-primary font-medium">{allUsers.find(u => String(u.id) === String(candidate.assigned_recruiter))?.display_name || '—'}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Marketing Support</p>
+                    <p className="text-text-primary font-medium">{allUsers.find(u => String(u.id) === String(candidate.assigned_marketing))?.display_name || '—'}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Profiles Count</p>
+                    <p className="text-text-primary font-bold">{candidate.profiles_count || 1}</p>
                   </div>
                 </div>
               )}
@@ -599,144 +975,163 @@ export const CandidateDetail: React.FC = () => {
           </section>
 
           {/* Payments */}
-          <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
-            <div className="px-6 py-4 border-b border-border-primary flex items-center justify-between">
-              <h3 className="font-bold text-text-primary flex items-center gap-2">
-                <CreditCard className="w-5 h-5 text-accent-green" />
-                Payments
-              </h3>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-text-secondary">₹{totalPaid} / ₹{candidate.package_amount}</span>
-                <div className="w-24 h-1.5 bg-bg-tertiary rounded-full overflow-hidden">
-                  <div className="h-full bg-accent-green" style={{ width: `${Math.min(paymentProgress, 100)}%` }} />
+          {(user?.role === 'administrator' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter') && (
+            <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
+              <div className="px-6 py-4 border-b border-border-primary flex items-center justify-between">
+                <h3 className="font-bold text-text-primary flex items-center gap-2">
+                  <CreditCard className="w-5 h-5 text-accent-green" />
+                  Payments
+                </h3>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-text-secondary">₹{totalPaid} / ₹{candidate.package_amount}</span>
+                  <div className="w-24 h-1.5 bg-bg-tertiary rounded-full overflow-hidden">
+                    <div className="h-full bg-accent-green" style={{ width: `${Math.min(paymentProgress, 100)}%` }} />
+                  </div>
                 </div>
               </div>
-            </div>
-            <div className="p-6 space-y-6">
-              {/* Payment List */}
-              <div className="space-y-3">
-                {payments.map(p => (
-                  <div key={p.id} className="flex items-center justify-between p-4 bg-bg-tertiary/50 border border-border-primary rounded-xl">
-                    <div className="flex items-center gap-4">
-                      <div className="w-8 h-8 rounded-lg bg-bg-secondary flex items-center justify-center font-bold text-xs">
-                        #{p.part_number}
+              <div className="p-6 space-y-6">
+                {/* Payment List */}
+                <div className="space-y-3">
+                  {payments.map(p => (
+                    <div key={p.id} className="flex items-center justify-between p-4 bg-bg-tertiary/50 border border-border-primary rounded-xl">
+                      <div className="flex items-center gap-4">
+                        <div className="w-8 h-8 rounded-lg bg-bg-secondary flex items-center justify-center font-bold text-xs">
+                          #{p.part_number}
+                        </div>
+                        <div>
+                          <p className="font-bold text-text-primary">₹{p.amount.toLocaleString()}</p>
+                          <p className="text-[10px] text-text-muted uppercase font-bold">Due: {new Date(p.due_date).toLocaleDateString()}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-bold text-text-primary">₹{p.amount.toLocaleString()}</p>
-                        <p className="text-[10px] text-text-muted uppercase font-bold">Due: {new Date(p.due_date).toLocaleDateString()}</p>
+                      <div className="flex items-center gap-3">
+                        {p.status === 'paid' ? (
+                          <>
+                            <span className="text-[10px] px-2 py-1 bg-accent-green/10 text-accent-green font-bold rounded-full uppercase">Paid</span>
+                            <a 
+                              href={`#receipt?pay_id=${p.id}&cand_id=${candidate.id}`}
+                              className="p-2 text-text-secondary hover:text-accent-blue hover:bg-accent-blue/10 rounded-lg transition-all"
+                              title="View Receipt"
+                            >
+                              <FileText className="w-4 h-4" />
+                            </a>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-[10px] px-2 py-1 bg-accent-amber/10 text-accent-amber font-bold rounded-full uppercase">Pending</span>
+                            {canEdit && (
+                              <button 
+                                onClick={() => handleMarkPaid(p)}
+                                className="px-3 py-1 bg-accent-green text-white text-xs font-bold rounded-lg hover:bg-accent-green/90 transition-all"
+                              >
+                                Mark Paid
+                              </button>
+                            )}
+                          </>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      {p.status === 'paid' ? (
-                        <>
-                          <span className="text-[10px] px-2 py-1 bg-accent-green/10 text-accent-green font-bold rounded-full uppercase">Paid</span>
-                          <a 
-                            href={`#receipt?pay_id=${p.id}&cand_id=${candidate.id}`}
-                            className="p-2 text-text-secondary hover:text-accent-blue hover:bg-accent-blue/10 rounded-lg transition-all"
-                            title="View Receipt"
-                          >
-                            <FileText className="w-4 h-4" />
-                          </a>
-                        </>
-                      ) : (
-                        <>
-                          <span className="text-[10px] px-2 py-1 bg-accent-amber/10 text-accent-amber font-bold rounded-full uppercase">Pending</span>
-                          <button 
-                            onClick={() => handleMarkPaid(p)}
-                            className="px-3 py-1 bg-accent-green text-white text-xs font-bold rounded-lg hover:bg-accent-green/90 transition-all"
-                          >
-                            Mark Paid
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
 
-              {/* Add Payment Form */}
-              <form onSubmit={handleAddPayment} className="pt-6 border-t border-border-primary">
-                <p className="text-xs font-bold text-text-muted uppercase tracking-widest mb-4">Add Payment Plan</p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-text-muted uppercase">Part #</label>
-                    <select value={paymentForm.part_number} onChange={e => setPaymentForm({...paymentForm, part_number: Number(e.target.value)})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm">
-                      {[1,2,3,4,5].map(n => <option key={n} value={n}>Part {n}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-text-muted uppercase">Amount</label>
-                    <input type="number" value={paymentForm.amount} onChange={e => setPaymentForm({...paymentForm, amount: Number(e.target.value)})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-text-muted uppercase">Due Date</label>
-                    <input type="date" value={paymentForm.due_date} onChange={e => setPaymentForm({...paymentForm, due_date: e.target.value})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm" />
-                  </div>
-                  <div className="flex items-end">
-                    <button type="submit" className="w-full h-[38px] bg-bg-tertiary border border-border-primary rounded-lg text-text-primary hover:bg-accent-blue hover:text-white hover:border-accent-blue transition-all font-bold text-xs">
-                      Add Plan
-                    </button>
-                  </div>
-                </div>
-              </form>
-            </div>
-          </section>
+                {/* Add Payment Form */}
+                {canEdit && (
+                  <form onSubmit={handleAddPayment} className="pt-6 border-t border-border-primary">
+                    <p className="text-xs font-bold text-text-muted uppercase tracking-widest mb-4">Add Payment Plan</p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-text-muted uppercase">Part #</label>
+                        <select value={paymentForm.part_number} onChange={e => setPaymentForm({...paymentForm, part_number: Number(e.target.value)})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm">
+                          {[1,2,3,4,5].map(n => <option key={n} value={n}>Part {n}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-text-muted uppercase">Amount</label>
+                        <input type="number" value={paymentForm.amount} onChange={e => setPaymentForm({...paymentForm, amount: Number(e.target.value)})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-text-muted uppercase">Due Date</label>
+                        <input type="date" value={paymentForm.due_date} onChange={e => setPaymentForm({...paymentForm, due_date: e.target.value})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm" />
+                      </div>
+                      <div className="flex items-end">
+                        <button type="submit" className="w-full h-[38px] bg-bg-tertiary border border-border-primary rounded-lg text-text-primary hover:bg-accent-blue hover:text-white hover:border-accent-blue transition-all font-bold text-xs">
+                          Add Plan
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                )}
+              </div>
+            </section>
+          )}
 
           {/* Promises */}
-          <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
-            <div className="px-6 py-4 border-b border-border-primary flex items-center justify-between">
-              <h3 className="font-bold text-text-primary flex items-center gap-2">
-                <MessageSquare className="w-5 h-5 text-accent-amber" />
-                Promises Made
-              </h3>
-            </div>
-            <div className="p-6 space-y-6">
-              <div className="space-y-3">
-                {promises.map(p => (
-                  <div key={p.id} className="p-4 bg-bg-tertiary/50 border border-border-primary rounded-xl">
-                    <p className="text-sm text-text-primary font-medium">"{p.promise_text}"</p>
-                    <div className="flex items-center justify-between mt-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] text-text-muted">By {allUsers.find(u => u.id === p.made_by)?.display_name}</span>
-                        <span className="w-1 h-1 bg-text-muted rounded-full" />
-                        <span className="text-[10px] text-text-muted uppercase font-bold">{STAGES[p.stage as Stage]?.label.split('. ')[1]}</span>
-                      </div>
-                      <select 
-                        value={p.status} 
-                        onChange={async (e) => {
-                          await updatePromise({...p, status: e.target.value as any});
-                          await logActivity(candidate.id, 'Promise status updated', `Promise status changed to ${e.target.value}`, user?.id || null);
-                        }}
-                        className={cn(
-                          "text-[10px] font-bold uppercase px-2 py-1 rounded-lg bg-bg-secondary border border-border-primary focus:outline-none",
-                          p.status === 'fulfilled' ? "text-accent-green" : p.status === 'broken' ? "text-accent-red" : "text-accent-amber"
+          {(user?.role === 'administrator' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter') && (
+            <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
+              <div className="px-6 py-4 border-b border-border-primary flex items-center justify-between">
+                <h3 className="font-bold text-text-primary flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5 text-accent-amber" />
+                  Promises Made
+                </h3>
+              </div>
+              <div className="p-6 space-y-6">
+                <div className="space-y-3">
+                  {promises.map(p => (
+                    <div key={p.id} className="p-4 bg-bg-tertiary/50 border border-border-primary rounded-xl">
+                      <p className="text-sm text-text-primary font-medium">"{p.promise_text}"</p>
+                      <div className="flex items-center justify-between mt-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-text-muted">By {allUsers.find(u => u.id === p.made_by)?.display_name}</span>
+                          <span className="w-1 h-1 bg-text-muted rounded-full" />
+                          <span className="text-[10px] text-text-muted uppercase font-bold">{STAGES[p.stage as Stage]?.label.split('. ')[1]}</span>
+                        </div>
+                        {!isCandidate && !isLeadGen ? (
+                          <select 
+                            value={p.status} 
+                            onChange={async (e) => {
+                              await updatePromise({...p, status: e.target.value as any});
+                              await logActivity(candidate.id, 'Promise status updated', `Promise status changed to ${e.target.value}`, user?.id || null);
+                            }}
+                            className={cn(
+                              "text-[10px] font-bold uppercase px-2 py-1 rounded-lg bg-bg-secondary border border-border-primary focus:outline-none",
+                              p.status === 'fulfilled' ? "text-accent-green" : p.status === 'broken' ? "text-accent-red" : "text-accent-amber"
+                            )}
+                          >
+                            <option value="active">Active</option>
+                            <option value="fulfilled">Fulfilled</option>
+                            <option value="broken">Broken</option>
+                          </select>
+                        ) : (
+                          <span className={cn(
+                            "text-[10px] font-bold uppercase px-2 py-1 rounded-lg",
+                            p.status === 'fulfilled' ? "text-accent-green bg-accent-green/10" : p.status === 'broken' ? "text-accent-red bg-accent-red/10" : "text-accent-amber bg-accent-amber/10"
+                          )}>
+                            {p.status}
+                          </span>
                         )}
-                      >
-                        <option value="active">Active</option>
-                        <option value="fulfilled">Fulfilled</option>
-                        <option value="broken">Broken</option>
-                      </select>
+                      </div>
                     </div>
+                  ))}
+                </div>
+                {canEdit && (
+                  <div className="flex gap-2">
+                    <input 
+                      type="text" 
+                      value={promiseText}
+                      onChange={e => setPromiseText(e.target.value)}
+                      placeholder="Type a promise made to the candidate..."
+                      className="flex-1 bg-bg-tertiary border border-border-primary rounded-xl px-4 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-amber transition-colors"
+                    />
+                    <button 
+                      onClick={handleAddPromise}
+                      className="px-4 py-2 bg-accent-amber text-white font-bold rounded-xl hover:bg-accent-amber/90 transition-all shadow-lg shadow-accent-amber/20"
+                    >
+                      <Plus className="w-5 h-5" />
+                    </button>
                   </div>
-                ))}
+                )}
               </div>
-              <div className="flex gap-2">
-                <input 
-                  type="text" 
-                  value={promiseText}
-                  onChange={e => setPromiseText(e.target.value)}
-                  placeholder="Type a promise made to the candidate..."
-                  className="flex-1 bg-bg-tertiary border border-border-primary rounded-xl px-4 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-amber transition-colors"
-                />
-                <button 
-                  onClick={handleAddPromise}
-                  className="px-4 py-2 bg-accent-amber text-white font-bold rounded-xl hover:bg-accent-amber/90 transition-all shadow-lg shadow-accent-amber/20"
-                >
-                  <Plus className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-          </section>
+            </section>
+          )}
         </div>
 
         {/* RIGHT COLUMN */}
@@ -749,59 +1144,136 @@ export const CandidateDetail: React.FC = () => {
                 Status Flags
               </h3>
             </div>
-            <div className="p-6 grid grid-cols-1 gap-4">
-              {Object.entries(candidate.flags).map(([key, value]) => (
-                <label key={key} className="flex items-center justify-between group cursor-pointer">
-                  <span className="text-sm font-medium text-text-secondary group-hover:text-text-primary transition-colors capitalize">
-                    {key.replace(/_/g, ' ')}
-                  </span>
-                  <div 
-                    onClick={() => handleToggleFlag(key as keyof Candidate['flags'])}
-                    className={cn(
-                      "w-12 h-6 rounded-full relative transition-all duration-300",
-                      value ? "bg-accent-green" : "bg-bg-tertiary border border-border-primary"
-                    )}
-                  >
-                    <div className={cn(
-                      "absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-300 shadow-sm",
-                      value ? "left-7" : "left-1"
-                    )} />
+            <div className="p-6 space-y-6">
+              {[
+                {
+                  title: 'CS Team',
+                  flags: [
+                    { key: 'agreement_sent', label: 'Agreement Sent' },
+                    { key: 'agreement_signed', label: 'Agreement Signed' },
+                    { key: 'qc_checklist_done', label: 'QC Checklist Done' },
+                  ]
+                },
+                {
+                  title: 'Resume Team',
+                  flags: [
+                    { key: 'resume_approved', label: 'Team Leader Approved Resume' },
+                    { key: 'candidate_resume_approved', label: 'Candidate Approved Resume' },
+                  ]
+                },
+                {
+                  title: 'System Admin',
+                  flags: [
+                    { key: 'marketing_email_created', label: 'Marketing Email Created' },
+                    { key: 'two_step_verification', label: 'Added Two Step Verification' },
+                  ]
+                },
+                {
+                  title: 'Marketing Team',
+                  flags: [
+                    { key: 'linkedin_optimized', label: 'LinkedIn Profile Optimization' },
+                  ]
+                }
+              ].map((group) => (
+                <div key={group.title} className="space-y-3">
+                  <h4 className="text-[10px] font-bold text-text-muted uppercase tracking-widest border-b border-border-primary pb-1">
+                    {group.title}
+                  </h4>
+                  <div className="grid grid-cols-1 gap-3">
+                    {group.flags.map((flag) => (
+                      <label key={flag.key} className="flex items-center justify-between group cursor-pointer">
+                        <span className="text-sm font-medium text-text-secondary group-hover:text-text-primary transition-colors">
+                          {flag.label}
+                        </span>
+                        <div 
+                          onClick={() => canEdit && handleToggleFlag(flag.key as keyof Candidate['flags'])}
+                          className={cn(
+                            "w-10 h-5 rounded-full relative transition-all duration-300",
+                            isCandidate ? "cursor-default" : "cursor-pointer",
+                            candidate.flags[flag.key as keyof Candidate['flags']] ? "bg-accent-green" : "bg-bg-tertiary border border-border-primary"
+                          )}
+                        >
+                          <div className={cn(
+                            "absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all duration-300 shadow-sm",
+                            candidate.flags[flag.key as keyof Candidate['flags']] ? "left-5.5" : "left-0.5"
+                          )} />
+                        </div>
+                      </label>
+                    ))}
                   </div>
-                </label>
+                </div>
               ))}
+
+              {/* Onboarding Success Message */}
+              {[
+                'agreement_sent',
+                'agreement_signed',
+                'qc_checklist_done',
+                'resume_approved',
+                'candidate_resume_approved',
+                'marketing_email_created',
+                'two_step_verification',
+                'linkedin_optimized'
+              ].every(key => candidate.flags[key as keyof Candidate['flags']] === true) && (
+                <motion.div 
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="mt-4 p-4 bg-accent-green/10 border border-accent-green/20 rounded-xl flex items-center gap-3 text-accent-green"
+                >
+                  <CheckCircle2 className="w-6 h-6 shrink-0" />
+                  <p className="font-bold">Candidate onboarded successfully!</p>
+                </motion.div>
+              )}
             </div>
           </section>
 
           {/* QC Checklist */}
-          <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
-            <div className="px-6 py-4 border-b border-border-primary">
-              <h3 className="font-bold text-text-primary flex items-center gap-2">
-                <CheckSquare className="w-5 h-5 text-accent-blue" />
-                QC Call Checklist
-              </h3>
-            </div>
-            <div className="p-6 space-y-4">
-              {checklist.map(item => (
-                <label key={item.id} className="flex items-center gap-3 group cursor-pointer">
-                  <div 
-                    onClick={() => handleCheckQC(item)}
-                    className={cn(
-                      "w-5 h-5 rounded border flex items-center justify-center transition-all",
-                      item.checked ? "bg-accent-blue border-accent-blue" : "bg-bg-tertiary border-border-primary group-hover:border-accent-blue"
+          {(user?.role === 'administrator' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs') && (
+            <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
+              <div className="px-6 py-4 border-b border-border-primary flex items-center justify-between">
+                <h3 className="font-bold text-text-primary flex items-center gap-2">
+                  <CheckSquare className="w-5 h-5 text-accent-blue" />
+                  QC Call Checklist
+                </h3>
+              </div>
+              <div className="p-6 space-y-4">
+                {checklist.map(item => (
+                  <div key={item.id} className="space-y-2">
+                    <label className="flex items-center gap-3 group cursor-pointer">
+                      <div 
+                        onClick={() => canEdit && handleCheckQC(item)}
+                        className={cn(
+                          "w-5 h-5 rounded border flex items-center justify-center transition-all",
+                          item.checked ? "bg-accent-blue border-accent-blue" : "bg-bg-tertiary border-border-primary group-hover:border-accent-blue",
+                          isCandidate && "cursor-default"
+                        )}
+                      >
+                        {item.checked && <CheckCircle2 className="w-4 h-4 text-white" />}
+                      </div>
+                      <span className={cn(
+                        "text-sm transition-colors",
+                        item.checked ? "text-text-primary font-medium" : "text-text-secondary"
+                      )}>
+                        {item.item_label}
+                      </span>
+                    </label>
+                    {item.has_text_box && (
+                      <div className="ml-8">
+                        <input
+                          type="text"
+                          value={item.value || ''}
+                          onChange={(e) => canEdit && handleUpdateQCValue(item, e.target.value)}
+                          readOnly={isCandidate}
+                          placeholder={isCandidate ? '' : `Enter ${item.item_label.toLowerCase()} details...`}
+                          className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:border-accent-blue transition-colors"
+                        />
+                      </div>
                     )}
-                  >
-                    {item.checked && <CheckCircle2 className="w-4 h-4 text-white" />}
                   </div>
-                  <span className={cn(
-                    "text-sm transition-colors",
-                    item.checked ? "text-text-primary font-medium" : "text-text-secondary"
-                  )}>
-                    {item.item_label}
-                  </span>
-                </label>
-              ))}
-            </div>
-          </section>
+                ))}
+              </div>
+            </section>
+          )}
 
           {/* Follow-Ups */}
           <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
@@ -819,40 +1291,139 @@ export const CandidateDetail: React.FC = () => {
                       <span className="text-xs font-bold text-accent-amber flex items-center gap-1.5">
                         <Calendar className="w-3.5 h-3.5" /> {f.followup_date}
                       </span>
-                      <button 
-                        onClick={async () => {
-                          await updateFollowUp({...f, done: true});
-                          await logActivity(candidate.id, 'Follow-up completed', `Note: ${f.note}`, user?.id || null);
-                        }}
-                        className="text-[10px] font-bold text-text-muted hover:text-accent-green uppercase transition-colors"
-                      >
-                        Mark Done
-                      </button>
+                      {canEdit && (
+                        <button 
+                          onClick={async () => {
+                            await updateFollowUp({...f, done: true});
+                            await logActivity(candidate.id, 'Follow-up completed', `Note: ${f.note}`, user?.id || null);
+                          }}
+                          className="text-[10px] font-bold text-text-muted hover:text-accent-green uppercase transition-colors"
+                        >
+                          Mark Done
+                        </button>
+                      )}
                     </div>
                     <p className="text-sm text-text-primary">{f.note}</p>
                   </div>
                 ))}
               </div>
-              <div className="space-y-3 pt-4 border-t border-border-primary">
-                <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Schedule New</p>
-                <input 
-                  type="date" 
-                  value={followUpForm.date}
-                  onChange={e => setFollowUpForm({...followUpForm, date: e.target.value})}
-                  className="w-full bg-bg-tertiary border border-border-primary rounded-xl px-4 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-amber transition-colors"
-                />
-                <textarea 
-                  value={followUpForm.note}
-                  onChange={e => setFollowUpForm({...followUpForm, note: e.target.value})}
-                  placeholder="Follow-up note..."
-                  className="w-full bg-bg-tertiary border border-border-primary rounded-xl px-4 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-amber transition-colors min-h-[80px]"
-                />
-                <button 
-                  onClick={handleAddFollowUp}
-                  className="w-full py-2 bg-accent-amber text-white font-bold rounded-xl hover:bg-accent-amber/90 transition-all shadow-lg shadow-accent-amber/20"
-                >
-                  Schedule Follow-Up
-                </button>
+              {canEdit && (
+                <div className="space-y-3 pt-4 border-t border-border-primary">
+                  <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Schedule New</p>
+                  <input 
+                    type="date" 
+                    value={followUpForm.date}
+                    onChange={e => setFollowUpForm({...followUpForm, date: e.target.value})}
+                    className="w-full bg-bg-tertiary border border-border-primary rounded-xl px-4 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-amber transition-colors"
+                  />
+                  <textarea 
+                    value={followUpForm.note}
+                    onChange={e => setFollowUpForm({...followUpForm, note: e.target.value})}
+                    placeholder="Follow-up note..."
+                    className="w-full bg-bg-tertiary border border-border-primary rounded-xl px-4 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-amber transition-colors min-h-[80px]"
+                  />
+                  <button 
+                    onClick={handleAddFollowUp}
+                    className="w-full py-2 bg-accent-amber text-white font-bold rounded-xl hover:bg-accent-amber/90 transition-all shadow-lg shadow-accent-amber/20"
+                  >
+                    Schedule Follow-Up
+                  </button>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Interview History */}
+          <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
+            <div className="px-6 py-4 border-b border-border-primary flex items-center justify-between">
+              <h3 className="font-bold text-text-primary flex items-center gap-2">
+                <Video className="w-5 h-5 text-accent-red" />
+                Interview History
+              </h3>
+              <a href="#interviews" className="text-xs font-bold text-accent-blue hover:underline">View All</a>
+            </div>
+            <div className="p-6 space-y-4">
+              {interviews.length > 0 ? (
+                interviews.map(int => (
+                  <div key={int.id} className="p-4 bg-bg-tertiary/50 border border-border-primary rounded-xl space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className={cn(
+                        "px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border",
+                        int.status === 'live' ? "bg-accent-red/10 text-accent-red border-accent-red/20" : "bg-bg-tertiary text-text-muted border-border-primary"
+                      )}>
+                        {int.status.replace('_', ' ')}
+                      </span>
+                      <span className="text-[10px] text-text-muted font-medium">
+                        {new Date(int.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                    {int.scheduled_at && (
+                      <p className="text-sm font-bold text-text-primary flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-accent-blue" />
+                        {new Date(int.scheduled_at).toLocaleString()}
+                      </p>
+                    )}
+                    {int.feedback && (
+                      <p className="text-xs text-text-secondary italic line-clamp-2">"{int.feedback}"</p>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-4">
+                  <p className="text-sm text-text-muted italic">No interviews recorded</p>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {/* Application Performance */}
+          <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
+            <div className="px-6 py-4 border-b border-border-primary flex items-center justify-between">
+              <h3 className="font-bold text-text-primary flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-accent-blue" />
+                Application Performance
+              </h3>
+              <a href="#app-tracker" className="text-xs font-bold text-accent-blue hover:underline">Tracker</a>
+            </div>
+            <div className="p-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 bg-bg-tertiary/50 border border-border-primary rounded-xl">
+                  <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Today</p>
+                  <p className="text-2xl font-bold text-text-primary mt-1">{appStats.day}</p>
+                </div>
+                <div className="p-4 bg-bg-tertiary/50 border border-border-primary rounded-xl">
+                  <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">This Week</p>
+                  <p className="text-2xl font-bold text-text-primary mt-1">{appStats.week}</p>
+                </div>
+                <div className="p-4 bg-bg-tertiary/50 border border-border-primary rounded-xl">
+                  <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">This Month</p>
+                  <p className="text-2xl font-bold text-text-primary mt-1">{appStats.month}</p>
+                </div>
+                <div className="p-4 bg-bg-tertiary/50 border border-border-primary rounded-xl">
+                  <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Lifetime</p>
+                  <p className="text-2xl font-bold text-text-primary mt-1">{appStats.lifetime}</p>
+                </div>
+              </div>
+              
+              {/* Daily Target Progress */}
+              <div className="mt-6 space-y-2">
+                <div className="flex justify-between items-end">
+                  <p className="text-xs font-bold text-text-muted uppercase tracking-widest">Daily Target Progress</p>
+                  <p className="text-xs font-bold text-text-primary">
+                    {appStats.day} / {(candidate.profiles_count || 1) * 40}
+                  </p>
+                </div>
+                <div className="h-2 bg-bg-tertiary rounded-full overflow-hidden">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${Math.min((appStats.day / ((candidate.profiles_count || 1) * 40)) * 100, 100)}%` }}
+                    className={cn(
+                      "h-full rounded-full transition-all",
+                      appStats.day >= (candidate.profiles_count || 1) * 40 ? "bg-accent-green" : "bg-accent-blue"
+                    )}
+                  />
+                </div>
+                <p className="text-[10px] text-text-muted italic">Target: 40 applications per profile per day.</p>
               </div>
             </div>
           </section>
@@ -867,13 +1438,18 @@ export const CandidateDetail: React.FC = () => {
             </div>
             <div className="p-6 max-h-[400px] overflow-y-auto space-y-6 relative">
               <div className="absolute left-8 top-6 bottom-6 w-px bg-border-primary" />
-              {activityLogs.map((log, i) => (
+              {combinedLogs.map((log) => (
                 <div key={log.id} className="relative pl-8">
-                  <div className="absolute left-[-4px] top-1.5 w-2 h-2 rounded-full bg-accent-gray border-2 border-bg-secondary" />
+                  <div className={cn(
+                    "absolute left-[-4px] top-1.5 w-2 h-2 rounded-full border-2 border-bg-secondary",
+                    log.type === 'resume' ? "bg-accent-purple" : 
+                    log.type === 'application' ? "bg-accent-blue" : 
+                    log.type === 'interview' ? "bg-accent-red" : "bg-accent-gray"
+                  )} />
                   <p className="text-sm font-bold text-text-primary">{log.action}</p>
                   <p className="text-xs text-text-secondary mt-0.5">{log.details}</p>
                   <div className="flex items-center gap-2 mt-2">
-                    <span className="text-[10px] text-text-muted font-medium">{allUsers.find(u => u.id === log.user_id)?.display_name || 'System'}</span>
+                    <span className="text-[10px] text-text-muted font-medium">{allUsers.find(u => String(u.id) === String(log.user_id))?.display_name || 'System'}</span>
                     <span className="w-1 h-1 bg-text-muted rounded-full opacity-30" />
                     <span className="text-[10px] text-text-muted">{new Date(log.created_at).toLocaleString()}</span>
                   </div>

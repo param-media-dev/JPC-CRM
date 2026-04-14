@@ -90,10 +90,13 @@ export const Receipt: React.FC = () => {
           <div className="bg-slate-900 text-white p-8 md:p-12 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
             <div>
               <div className="flex items-center gap-3 mb-2">
-                <div className="w-10 h-10 bg-accent-blue rounded-xl flex items-center justify-center">
-                  <span className="text-white font-bold text-xl">JP</span>
-                </div>
-                <h1 className="text-2xl font-bold font-heading tracking-tight">JPC CRM</h1>
+                <img 
+                  src="https://test-wp.param.club/wp-content/uploads/2026/04/Asset-5@4x-scaled.webp" 
+                  alt="Placify Logo" 
+                  className="h-12 w-auto"
+                  referrerPolicy="no-referrer"
+                />
+                <h1 className="text-2xl font-bold font-heading tracking-tight hidden">Placify</h1>
               </div>
               <p className="text-slate-400 text-sm">Job Placement Customer Relationship Management</p>
             </div>
@@ -170,7 +173,7 @@ export const Receipt: React.FC = () => {
             <p className="text-slate-400 text-xs font-medium">This is a computer-generated receipt and does not require a physical signature.</p>
             <div className="flex items-center gap-2">
               <div className="w-2 h-2 bg-accent-green rounded-full"></div>
-              <p className="text-slate-900 font-bold text-sm">JPC CRM Official Receipt</p>
+              <p className="text-slate-900 font-bold text-sm">Placify Official Receipt</p>
             </div>
           </div>
         </div>

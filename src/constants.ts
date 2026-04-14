@@ -10,6 +10,7 @@ export const STAGES: Record<Stage, { label: string; color: string; icon: string 
   recruiter:           { label: '7. Recruiter',            color: '#3B82F6', icon: '◎' },
   sys_admin:           { label: '8. System Admin',         color: '#64748B', icon: '◧' },
   marketing_active:    { label: '9. Marketing Active',     color: '#059669', icon: '◆' },
+  application_tracking: { label: '10. App Tracking',       color: '#3B82F6', icon: '◎' },
   completed:           { label: 'Completed',               color: '#10B981', icon: '✓' },
   not_interested:      { label: 'Not Interested',          color: '#6B7280', icon: '✕' },
 };
@@ -23,7 +24,8 @@ export const TRANSITIONS: Record<Stage, Stage[]> = {
   cs_assign_recruiter: ['recruiter'],
   recruiter:           ['sys_admin'],
   sys_admin:           ['marketing_active'],
-  marketing_active:    ['completed'],
+  marketing_active:    ['application_tracking'],
+  application_tracking: ['completed'],
   completed:           [],
   not_interested:      [],
 };
@@ -37,7 +39,10 @@ export const ROLE_PERMISSIONS: Record<Role, { allowedStages: Stage[] | 'ALL'; ad
   jpc_cs: { allowedStages: ['cs_qc', 'cs_assign_recruiter'] },
   jpc_resume: { allowedStages: ['resume_team'] },
   jpc_marketing: { allowedStages: ['marketing_leader', 'marketing_active'] },
-  jpc_recruiter: { allowedStages: ['recruiter'] },
+  jpc_recruiter: { allowedStages: ['recruiter', 'application_tracking'] },
+  jpc_proxy: { allowedStages: 'ALL' },
+  jpc_candidate: { allowedStages: [] },
+  candidate: { allowedStages: [] },
 };
 
 export const LEAD_SOURCES = [

@@ -23,12 +23,22 @@ export const Pipeline: React.FC = () => {
   }, [isAuthReady]);
 
   const filteredCandidates = useMemo(() => {
-    return candidates.filter(c => 
-      c.full_name.toLowerCase().includes(search.toLowerCase()) ||
-      c.phone.includes(search) ||
-      c.email.toLowerCase().includes(search.toLowerCase())
-    );
-  }, [candidates, search]);
+    return candidates.filter(c => {
+      const matchesSearch = c.full_name.toLowerCase().includes(search.toLowerCase()) ||
+        c.phone.includes(search) ||
+        c.email.toLowerCase().includes(search.toLowerCase());
+      
+      if (!matchesSearch) return false;
+
+      if (user?.role === 'jpc_recruiter') {
+        return String(c.assigned_recruiter) === String(user.id);
+      } else if (user?.role === 'jpc_lead_gen') {
+        return String(c.lead_generated_by) === String(user.id);
+      }
+      
+      return true;
+    });
+  }, [candidates, search, user]);
 
   if (isLoading) {
     return (
@@ -90,9 +100,12 @@ export const Pipeline: React.FC = () => {
                         onClick={() => window.location.hash = `#candidate?id=${candidate.id}`}
                       >
                         <div className="flex items-start justify-between mb-3">
-                          <h4 className="font-bold text-text-primary text-sm group-hover:text-accent-blue transition-colors truncate pr-6">
-                            {candidate.full_name}
-                          </h4>
+                          <div className="truncate pr-6">
+                            <h4 className="font-bold text-text-primary text-sm group-hover:text-accent-blue transition-colors truncate">
+                              {candidate.full_name}
+                            </h4>
+                            <p className="text-[10px] font-mono text-text-muted mt-0.5">{candidate.id}</p>
+                          </div>
                           <div className="absolute right-3 top-3">
                             <MoreVertical className="w-4 h-4 text-text-muted group-hover:text-text-secondary transition-colors" />
                           </div>

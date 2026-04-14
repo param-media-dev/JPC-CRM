@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { LayoutGrid, ShieldCheck, LogIn, Mail, Lock, User as UserIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 export const LoginPage: React.FC = () => {
   const { login, signup, resetPassword } = useAuth();
   const { showToast } = useToast();
+  const { theme } = useTheme();
   const [isLoading, setIsLoading] = useState(false);
   const [isSignup, setIsSignup] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
@@ -15,6 +17,12 @@ export const LoginPage: React.FC = () => {
     password: '',
     displayName: ''
   });
+
+  React.useEffect(() => {
+    if (window.location.hash === '#signup') {
+      setIsSignup(true);
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,17 +63,25 @@ export const LoginPage: React.FC = () => {
           <motion.div 
             initial={{ scale: 0.5, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="w-20 h-20 bg-accent-blue rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-2xl shadow-accent-blue/20"
+            className="flex items-center justify-center mx-auto mb-6"
           >
-            <LayoutGrid className="w-10 h-10 text-white" />
+            <img 
+              src={theme === 'dark' 
+                ? "https://test-wp.param.club/wp-content/uploads/2026/04/Asset-5@4x-scaled.webp" 
+                : "https://test-wp.param.club/wp-content/uploads/2026/04/Asset-4@4x-scaled.webp"
+              } 
+              alt="Placify Logo" 
+              className="h-24 w-auto"
+              referrerPolicy="no-referrer"
+            />
           </motion.div>
           <motion.h1 
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.1 }}
-            className="text-4xl font-bold text-text-primary tracking-tight font-heading"
+            className="text-4xl font-bold text-text-primary tracking-tight font-heading hidden"
           >
-            JPC CRM
+            Placify
           </motion.h1>
           <motion.p 
             initial={{ y: 20, opacity: 0 }}
@@ -196,6 +212,18 @@ export const LoginPage: React.FC = () => {
           <p className="text-sm text-text-muted">
             Authorized Personnel Only
           </p>
+          <div className="mt-8 flex flex-col items-center gap-2">
+            <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Powered by</p>
+            <img 
+              src={theme === 'dark' 
+                ? "https://test-wp.param.club/wp-content/uploads/2026/04/Asset-1@4x.webp" 
+                : "https://test-wp.param.club/wp-content/uploads/2026/04/Auriic_Logo-_1_-1.webp"
+              } 
+              alt="Auriic Logo" 
+              className="h-6 w-auto opacity-50"
+              referrerPolicy="no-referrer"
+            />
+          </div>
         </motion.div>
       </div>
     </div>

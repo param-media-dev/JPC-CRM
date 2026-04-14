@@ -2,13 +2,13 @@
   "entities": {
     "User": {
       "title": "User",
-      "description": "A team member of the JPC CRM.",
+      "description": "A team member of Placify.",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
         "username": { "type": "string" },
         "display_name": { "type": "string" },
-        "role": { "type": "string", "enum": ["administrator", "jpc_manager", "jpc_sales", "jpc_cs", "jpc_resume", "jpc_recruiter", "jpc_marketing"] },
+        "role": { "type": "string", "enum": ["administrator", "jpc_manager", "jpc_sales", "jpc_cs", "jpc_resume", "jpc_recruiter", "jpc_marketing", "jpc_proxy"] },
         "created_at": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "username", "display_name", "role", "created_at"]
@@ -53,9 +53,25 @@
         },
         "created_at": { "type": "string", "format": "date-time" },
         "updated_at": { "type": "string", "format": "date-time" },
-        "not_interested_at": { "type": "string", "format": "date-time" }
+        "not_interested_at": { "type": "string", "format": "date-time" },
+        "profiles_count": { "type": "number" }
       },
       "required": ["id", "full_name", "phone", "current_stage", "created_at", "updated_at"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "System or user notifications",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "recipient_id": { "type": "string" },
+        "sender_id": { "type": "string" },
+        "type": { "type": "string", "enum": ["target_not_met", "system_alert"] },
+        "message": { "type": "string" },
+        "read": { "type": "boolean" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "recipient_id", "type", "message", "read", "created_at"]
     },
     "Payment": {
       "title": "Payment",
@@ -134,6 +150,75 @@
         "created_at": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "candidate_id", "action", "created_at"]
+    },
+    "Application": {
+      "title": "Application",
+      "description": "A job application tracked by a recruiter.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "candidate_id": { "type": "string" },
+        "recruiter_id": { "type": "string" },
+        "job_link": { "type": "string" },
+        "company_name": { "type": "string" },
+        "applied_at": { "type": "string", "format": "date" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "candidate_id", "recruiter_id", "job_link", "company_name", "applied_at", "created_at"]
+    },
+    "ReportLog": {
+      "title": "ReportLog",
+      "description": "Tracks sent daily reports to prevent duplicates",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "recruiter_id": { "type": "string" },
+        "candidate_id": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "sent_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "recruiter_id", "candidate_id", "date", "sent_at"]
+    },
+    "ResumeChangeRequest": {
+      "title": "ResumeChangeRequest",
+      "description": "Requests for resume modifications",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "candidate_id": { "type": "string" },
+        "recruiter_id": { "type": "string" },
+        "details": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending_tl", "pending_cs", "pending_resume_team", "completed", "rejected"] },
+        "tl_notes": { "type": "string" },
+        "cs_notes": { "type": "string" },
+        "resume_team_notes": { "type": "string" },
+        "new_resume_url": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "candidate_id", "recruiter_id", "details", "status", "created_at", "updated_at"]
+    },
+    "InterviewRequest": {
+      "title": "InterviewRequest",
+      "description": "Coordination for interview support between CS, Proxy, and Recruiter.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "candidate_id": { "type": "string" },
+        "cs_id": { "type": "string" },
+        "proxy_id": { "type": "string" },
+        "recruiter_id": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending_proxy", "scheduled", "live", "feedback_shared", "result_pending", "next_round", "rejected", "completed"] },
+        "calendly_link": { "type": "string" },
+        "scheduled_at": { "type": "string", "format": "date-time" },
+        "whatsapp_group_link": { "type": "string" },
+        "feedback": { "type": "string" },
+        "result": { "type": "string", "enum": ["next_round", "rejected"] },
+        "cs_decision": { "type": "string", "enum": ["restart_marketing", "plan_completed"] },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "candidate_id", "cs_id", "status", "created_at", "updated_at"]
     }
   },
   "firestore": {
@@ -143,6 +228,11 @@
     "jpc_promises": { "schema": "Promise", "description": "Promises made to candidates." },
     "jpc_qc_checklist": { "schema": "QCChecklistItem", "description": "QC call items." },
     "jpc_followups": { "schema": "FollowUp", "description": "Scheduled follow-ups." },
-    "jpc_activity_logs": { "schema": "ActivityLog", "description": "Audit trail." }
+    "jpc_activity_logs": { "schema": "ActivityLog", "description": "Audit trail." },
+    "jpc_applications": { "schema": "Application", "description": "Job applications tracked." },
+    "jpc_notifications": { "schema": "Notification", "description": "System alerts and target warnings." },
+    "jpc_report_logs": { "schema": "ReportLog", "description": "Tracks sent daily reports to prevent duplicates" },
+    "jpc_resume_requests": { "schema": "ResumeChangeRequest", "description": "Resume modification log book" },
+    "jpc_interviews": { "schema": "InterviewRequest", "description": "Interview support coordination" }
   }
 }

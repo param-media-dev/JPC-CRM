@@ -2,14 +2,15 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { subscribeToCollection } from '../services/storage';
 import { STAGES } from '../constants';
-import { Search, Filter, X, Package, Phone, Mail, MapPin, Calendar, Users, ChevronRight, MoreVertical } from 'lucide-react';
+import { Search, Filter, X, Package, Phone, Mail, MapPin, Calendar, Users, ChevronRight, MoreVertical, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { Candidate, Stage } from '../types';
+import { Candidate, Stage, User } from '../types';
 
 export const Candidates: React.FC = () => {
   const { user, isAuthReady } = useAuth();
   const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [stageFilter, setStageFilter] = useState('');
@@ -20,7 +21,15 @@ export const Candidates: React.FC = () => {
       setCandidates(data.filter(c => c.current_stage !== 'not_interested'));
       setIsLoading(false);
     });
-    return () => unsub();
+
+    const unsubUsers = subscribeToCollection<User>('jpc_users', (data) => {
+      setAllUsers(data);
+    });
+
+    return () => {
+      unsub();
+      unsubUsers();
+    };
   }, [isAuthReady]);
 
   // Get stage from URL if present
@@ -32,6 +41,9 @@ export const Candidates: React.FC = () => {
 
   const filteredCandidates = useMemo(() => {
     return candidates.filter(c => {
+      // Lead Gen can only see their own leads
+      if (user?.role === 'jpc_lead_gen' && String(c.lead_generated_by) !== String(user?.id)) return false;
+
       const matchesSearch = 
         c.full_name.toLowerCase().includes(search.toLowerCase()) ||
         c.phone.includes(search) ||
@@ -41,7 +53,7 @@ export const Candidates: React.FC = () => {
       
       return matchesSearch && matchesStage;
     });
-  }, [candidates, search, stageFilter]);
+  }, [candidates, search, stageFilter, user]);
 
   if (isLoading) {
     return (
@@ -93,7 +105,9 @@ export const Candidates: React.FC = () => {
             <thead>
               <tr className="bg-bg-tertiary/50 border-b border-border-primary">
                 <th className="px-6 py-4 text-[10px] font-bold text-text-muted uppercase tracking-widest">Candidate</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-text-muted uppercase tracking-widest">ID</th>
                 <th className="px-6 py-4 text-[10px] font-bold text-text-muted uppercase tracking-widest">Contact</th>
+                <th className="px-6 py-4 text-[10px] font-bold text-text-muted uppercase tracking-widest">Portal</th>
                 <th className="px-6 py-4 text-[10px] font-bold text-text-muted uppercase tracking-widest">Current Stage</th>
                 <th className="px-6 py-4 text-[10px] font-bold text-text-muted uppercase tracking-widest">Package</th>
                 <th className="px-6 py-4 text-[10px] font-bold text-text-muted uppercase tracking-widest">Last Update</th>
@@ -125,6 +139,11 @@ export const Candidates: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4">
+                      <span className="text-xs font-mono font-medium text-text-secondary bg-bg-tertiary px-2 py-1 rounded border border-border-primary">
+                        {candidate.id}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
                       <div className="space-y-1">
                         <p className="text-xs text-text-primary flex items-center gap-2">
                           <Phone className="w-3.5 h-3.5 text-text-muted" /> {candidate.phone}
@@ -133,6 +152,16 @@ export const Candidates: React.FC = () => {
                           <Mail className="w-3.5 h-3.5 text-text-muted" /> {candidate.email || '—'}
                         </p>
                       </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      {allUsers.some(u => u.candidate_id === candidate.id) ? (
+                        <div className="flex items-center gap-1.5 text-accent-green">
+                          <ShieldCheck className="w-4 h-4" />
+                          <span className="text-[10px] font-bold uppercase">Active</span>
+                        </div>
+                      ) : (
+                        <div className="text-[10px] font-bold text-text-muted uppercase">No Access</div>
+                      )}
                     </td>
                     <td className="px-6 py-4">
                       <div className="inline-flex items-center gap-2 px-3 py-1 bg-bg-tertiary border border-border-primary rounded-full">

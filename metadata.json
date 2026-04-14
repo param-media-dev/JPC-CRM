@@ -1,5 +1,5 @@
 {
-  "name": "JPC CRM",
-  "description": "A comprehensive Job Placement Customer Relationship Management system with pipeline tracking, candidate management, and team collaboration.",
+  "name": "Placify",
+  "description": "Placify: A comprehensive Job Placement CRM powered by Auriic. Features advanced Role-Based Access Control (RBAC), pipeline tracking, and team collaboration. Full documentation available in GUIDE.md.",
   "requestFramePermissions": []
 }

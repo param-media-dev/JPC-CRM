@@ -12,7 +12,11 @@ import {
   Sun, 
   Moon,
   Menu,
-  X
+  X,
+  FileText,
+  FileEdit,
+  Video,
+  User as UserIcon
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { subscribeToCollection } from '../services/storage';
@@ -62,21 +66,51 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentHash, isOpen, setIsOpen
 
   const navItems = [
     { label: 'Dashboard', hash: '#dashboard', icon: LayoutDashboard, visible: true },
-    { label: 'Pipeline', hash: '#pipeline', icon: Trello, visible: true },
-    { label: 'Candidates', hash: '#candidates', icon: Users, visible: true },
-    { label: 'Follow-Ups', hash: '#followups', icon: Clock, visible: true, badge: followUpsCount },
+    { label: 'My Profile', hash: `#candidate?id=${user?.candidate_id}`, icon: UserIcon, visible: (user?.role === 'candidate' || user?.role === 'jpc_candidate') && !!user?.candidate_id },
+    { 
+      label: 'Pipeline', 
+      hash: '#pipeline', 
+      icon: Trello, 
+      visible: user?.role !== 'candidate' && user?.role !== 'jpc_candidate' && user?.role !== 'jpc_lead_gen' && user?.role !== 'jpc_resume' && user?.role !== 'jpc_proxy'
+    },
+    { label: 'Candidates', hash: '#candidates', icon: Users, visible: user?.role !== 'candidate' && user?.role !== 'jpc_candidate' },
+    { 
+      label: 'Follow-Ups', 
+      hash: '#followups', 
+      icon: Clock, 
+      visible: user?.role !== 'candidate' && user?.role !== 'jpc_candidate' && user?.role !== 'jpc_lead_gen' && user?.role !== 'jpc_resume' && user?.role !== 'jpc_proxy' && user?.role !== 'jpc_marketing', 
+      badge: followUpsCount 
+    },
+    { 
+      label: 'App Tracker', 
+      hash: '#applications', 
+      icon: FileText, 
+      visible: user?.role === 'administrator' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter'
+    },
+    { 
+      label: 'Resume Log', 
+      hash: '#resume-log', 
+      icon: FileEdit, 
+      visible: user?.role === 'administrator' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter' || user?.role === 'jpc_resume'
+    },
+    { 
+      label: 'Interview Support', 
+      hash: '#interviews', 
+      icon: Video, 
+      visible: user?.role === 'administrator' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter' || user?.role === 'jpc_proxy'
+    },
     { 
       label: 'Not Interested', 
       hash: '#not-interested', 
       icon: UserX, 
-      visible: user?.role === 'administrator' || user?.role === 'jpc_manager' || user?.role === 'jpc_sysadmin',
+      visible: (user?.role === 'administrator' || user?.role === 'jpc_manager' || user?.role === 'jpc_sysadmin'),
       badge: notInterestedCount
     },
     { 
       label: 'Team', 
       hash: '#team', 
       icon: Shield, 
-      visible: user?.role === 'administrator' || user?.role === 'jpc_manager'
+      visible: (user?.role === 'administrator' || user?.role === 'jpc_manager')
     },
   ];
 
@@ -97,11 +131,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentHash, isOpen, setIsOpen
       )}>
         {/* Brand Area */}
         <div className="p-6 flex items-center gap-3">
-          <div className="w-9 h-9 bg-accent-blue rounded-lg flex items-center justify-center shadow-lg shadow-accent-blue/20">
-            <span className="text-white font-bold text-lg">JP</span>
-          </div>
-          <div>
-            <h1 className="font-heading font-bold text-lg leading-none">JPC CRM</h1>
+          <img 
+            src={theme === 'dark' 
+              ? "https://test-wp.param.club/wp-content/uploads/2026/04/Asset-5@4x-scaled.webp" 
+              : "https://test-wp.param.club/wp-content/uploads/2026/04/Asset-4@4x-scaled.webp"
+            } 
+            alt="Placify Logo" 
+            className="h-10 w-auto"
+            referrerPolicy="no-referrer"
+          />
+          <div className="hidden">
+            <h1 className="font-heading font-bold text-lg leading-none">Placify</h1>
             <span className="text-[10px] uppercase tracking-wider text-text-muted font-bold mt-1 block">
               {user?.role.replace('jpc_', '').replace('_', ' ')}
             </span>
@@ -169,6 +209,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentHash, isOpen, setIsOpen
                 Sign out
               </button>
             </div>
+          </div>
+
+          <div className="pt-4 border-t border-border-primary flex flex-col items-center gap-2">
+            <p className="text-[8px] font-bold text-text-muted uppercase tracking-widest">Powered by</p>
+            <img 
+              src={theme === 'dark' 
+                ? "https://test-wp.param.club/wp-content/uploads/2026/04/Asset-1@4x.webp" 
+                : "https://test-wp.param.club/wp-content/uploads/2026/04/Auriic_Logo-_1_-1.webp"
+              } 
+              alt="Auriic Logo" 
+              className="h-5 w-auto opacity-50 hover:opacity-100 transition-opacity"
+              referrerPolicy="no-referrer"
+            />
           </div>
         </div>
       </aside>

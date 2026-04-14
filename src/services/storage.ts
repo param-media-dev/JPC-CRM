@@ -13,7 +13,7 @@ import {
   getDocFromServer
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { Candidate, Payment, Promise as PromiseType, QCChecklistItem, FollowUp, ActivityLog, User, Stage } from '../types';
+import { Candidate, Payment, Promise as PromiseType, QCChecklistItem, FollowUp, ActivityLog, User, Stage, InterviewRequest } from '../types';
 
 export enum OperationType {
   CREATE = 'create',
@@ -43,7 +43,7 @@ interface FirestoreErrorInfo {
   }
 }
 
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
@@ -80,6 +80,15 @@ export async function testConnection() {
 // Generic Data Access
 export const subscribeToCollection = <T>(collectionName: string, callback: (data: T[]) => void) => {
   const q = query(collection(db, collectionName));
+  return onSnapshot(q, (snapshot) => {
+    const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as T));
+    callback(data);
+  }, (error) => {
+    handleFirestoreError(error, OperationType.GET, collectionName);
+  });
+};
+
+export const subscribeToQuery = <T>(q: any, callback: (data: T[]) => void, collectionName: string) => {
   return onSnapshot(q, (snapshot) => {
     const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as T));
     callback(data);
@@ -194,22 +203,26 @@ export const updateQCChecklistItem = async (item: QCChecklistItem) => {
 
 export const seedQCChecklist = async (candidateId: string) => {
   const items = [
-    'Candidate verified identity',
-    'Education documents checked',
-    'Experience verified',
-    'Package terms explained',
-    'Payment schedule agreed',
-    'Training requirements discussed'
+    { label: 'Candidate indidity Verification', hasTextBox: false },
+    { label: 'Educational Verification', hasTextBox: false },
+    { label: 'Visa Verification', hasTextBox: false },
+    { label: 'Exprince Verification', hasTextBox: false },
+    { label: 'Location Verification', hasTextBox: true },
+    { label: 'Experirnce Verification', hasTextBox: false },
+    { label: 'Domain Suggection By Candidatte', hasTextBox: true },
+    { label: 'EAD Verification', hasTextBox: false }
   ];
   
-  for (const label of items) {
+  for (const item of items) {
     const id = generateId();
     const data = {
       id,
       candidate_id: candidateId,
-      item_key: label.toLowerCase().replace(/\s+/g, '_'),
-      item_label: label,
+      item_key: item.label.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, '_'),
+      item_label: item.label,
       checked: false,
+      value: '',
+      has_text_box: item.hasTextBox,
       created_at: new Date().toISOString()
     };
     try {
@@ -217,6 +230,43 @@ export const seedQCChecklist = async (candidateId: string) => {
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, `jpc_qc_checklist/${id}`);
     }
+  }
+};
+
+export const resetQCChecklist = async (candidateId: string) => {
+  try {
+    const q = query(collection(db, 'jpc_qc_checklist'), where('candidate_id', '==', candidateId));
+    const snap = await getDocs(q);
+    for (const d of snap.docs) {
+      await deleteDoc(doc(db, 'jpc_qc_checklist', d.id));
+    }
+    await seedQCChecklist(candidateId);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `jpc_qc_checklist reset for ${candidateId}`);
+  }
+};
+
+export const migrateAllChecklists = async () => {
+  try {
+    const candidatesSnap = await getDocs(collection(db, 'jpc_candidates'));
+    for (const candidateDoc of candidatesSnap.docs) {
+      const candidateId = candidateDoc.id;
+      const q = query(collection(db, 'jpc_qc_checklist'), where('candidate_id', '==', candidateId));
+      const checklistSnap = await getDocs(q);
+      
+      const checklist = checklistSnap.docs.map(d => d.data() as QCChecklistItem);
+      const isOld = checklist.length > 0 && (checklist.length !== 8 || !checklist.some(item => item.item_label === 'Candidate indidity Verification'));
+      
+      if (isOld) {
+        console.log(`Migrating checklist for candidate ${candidateId}...`);
+        for (const d of checklistSnap.docs) {
+          await deleteDoc(doc(db, 'jpc_qc_checklist', d.id));
+        }
+        await seedQCChecklist(candidateId);
+      }
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'jpc_candidates during migration');
   }
 };
 
@@ -254,6 +304,40 @@ export const logActivity = async (candidateId: string, action: string, details: 
     await setDoc(doc(db, 'jpc_activity_logs', id), data);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `jpc_activity_logs/${id}`);
+  }
+};
+
+// Interview Support
+export const addInterviewRequest = async (request: Omit<InterviewRequest, 'id' | 'created_at' | 'updated_at'>) => {
+  const id = generateId();
+  const data = { 
+    ...request, 
+    id, 
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+
+  // Remove undefined fields to prevent Firestore errors
+  Object.keys(data).forEach(key => {
+    if ((data as any)[key] === undefined) {
+      delete (data as any)[key];
+    }
+  });
+
+  try {
+    await setDoc(doc(db, 'jpc_interviews', id), data);
+    return id;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `jpc_interviews/${id}`);
+  }
+};
+
+export const updateInterviewRequest = async (id: string, updates: Partial<InterviewRequest>) => {
+  try {
+    const data = { ...updates, updated_at: new Date().toISOString() };
+    await updateDoc(doc(db, 'jpc_interviews', id), data);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `jpc_interviews/${id}`);
   }
 };
 

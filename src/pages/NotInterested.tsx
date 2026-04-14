@@ -112,6 +112,7 @@ export const NotInterested: React.FC = () => {
                 <div className="flex-1 space-y-4">
                   <div>
                     <h3 className="font-bold text-text-primary group-hover:text-accent-blue transition-colors">{candidate.full_name}</h3>
+                    <p className="text-[10px] font-mono text-text-muted mt-0.5">{candidate.id}</p>
                     <div className="flex items-center gap-3 mt-1">
                       <span className="text-xs text-text-secondary flex items-center gap-1">
                         <Phone className="w-3 h-3" /> {candidate.phone}

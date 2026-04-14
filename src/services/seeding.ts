@@ -37,6 +37,26 @@ const DEMO_CANDIDATES: Partial<Candidate>[] = [
 ];
 
 export async function seedData(): Promise<void> {
+  // Seed demo users if none exist
+  const usersSnap = await getDocs(collection(db, 'jpc_users'));
+  if (usersSnap.empty) {
+    console.log('Seeding demo users...');
+    const demoUsers: User[] = [
+      { id: 'tl1', username: 'tl1', display_name: 'Marketing Leader 1', role: 'jpc_marketing', created_at: now() },
+      { id: 'tl2', username: 'tl2', display_name: 'Marketing Leader 2', role: 'jpc_marketing', created_at: now() },
+      { id: 'rec1', username: 'rec1', display_name: 'Recruiter 1 (TL1)', role: 'jpc_recruiter', leader_id: 'tl1', created_at: now() },
+      { id: 'rec2', username: 'rec2', display_name: 'Recruiter 2 (TL1)', role: 'jpc_recruiter', leader_id: 'tl1', created_at: now() },
+      { id: 'rec3', username: 'rec3', display_name: 'Recruiter 3 (TL2)', role: 'jpc_recruiter', leader_id: 'tl2', created_at: now() },
+      { id: 'rec4', username: 'rec4', display_name: 'Recruiter 4 (TL2)', role: 'jpc_recruiter', leader_id: 'tl2', created_at: now() },
+      { id: 'sales1', username: 'sales1', display_name: 'Sales Person 1', role: 'jpc_sales', created_at: now() },
+      { id: 'cs1', username: 'cs1', display_name: 'CS Person 1', role: 'jpc_cs', created_at: now() },
+      { id: 'resume1', username: 'resume1', display_name: 'Resume Specialist 1', role: 'jpc_resume', created_at: now() },
+    ];
+    for (const u of demoUsers) {
+      await saveUser(u);
+    }
+  }
+
   // Check if candidates already exist
   const q = query(collection(db, 'jpc_candidates'), limit(1));
   const snapshot = await getDocs(q);
@@ -68,6 +88,7 @@ export async function seedData(): Promise<void> {
         assigned_sales: null,
         assigned_cs: null,
         assigned_resume: null,
+        assigned_marketing_leader: null,
         assigned_recruiter: null,
         assigned_marketing: null,
         package_name: c.package_name || '',
@@ -81,9 +102,9 @@ export async function seedData(): Promise<void> {
           qc_checklist_done: false,
           resume_approved: false,
           candidate_resume_approved: false,
-          linkedin_optimized: false,
           marketing_email_created: false,
-          google_auth_setup: false,
+          two_step_verification: false,
+          linkedin_optimized: false,
           marketing_started: false
         },
         not_interested_at: c.not_interested_at || null,

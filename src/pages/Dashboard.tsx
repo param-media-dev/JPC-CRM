@@ -1,16 +1,22 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { subscribeToCollection } from '../services/storage';
+import { subscribeToCollection, subscribeToQuery } from '../services/storage';
 import { STAGES } from '../constants';
-import { Users, CheckCircle2, Clock, UserX, ArrowRight, LayoutGrid, Phone, Calendar, ArrowUpRight, AlertCircle, ChevronRight } from 'lucide-react';
+import { Users, CheckCircle2, Clock, UserX, ArrowRight, LayoutGrid, Phone, Calendar, ArrowUpRight, AlertCircle, ChevronRight, FileEdit, Video, TrendingUp } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
-import { Candidate, FollowUp } from '../types';
+import { Candidate, FollowUp, Notification, ResumeChangeRequest, InterviewRequest, Application } from '../types';
+import { db } from '../firebase';
+import { query, collection, where } from 'firebase/firestore';
 
 export const Dashboard: React.FC = () => {
   const { user, isAuthReady } = useAuth();
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [followUps, setFollowUps] = useState<FollowUp[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [resumeRequests, setResumeRequests] = useState<ResumeChangeRequest[]>([]);
+  const [interviews, setInterviews] = useState<InterviewRequest[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -25,15 +31,66 @@ export const Dashboard: React.FC = () => {
       setFollowUps(data);
     });
 
+    let unsubNotifications = () => {};
+    if (user) {
+      const q = query(
+        collection(db, 'jpc_notifications'),
+        where('recipient_id', '==', String(user.id))
+      );
+      unsubNotifications = subscribeToQuery<Notification>(q, setNotifications, 'jpc_notifications');
+    }
+
+    const unsubResumeRequests = subscribeToCollection<ResumeChangeRequest>('jpc_resume_requests', (data) => {
+      setResumeRequests(data);
+    });
+
+    const unsubInterviews = subscribeToCollection<InterviewRequest>('jpc_interviews', (data) => {
+      setInterviews(data);
+    });
+
+    const unsubApps = subscribeToCollection<Application>('jpc_applications', (data) => {
+      setApplications(data);
+    });
+
     return () => {
       unsubCandidates();
       unsubFollowUps();
+      unsubNotifications();
+      unsubResumeRequests();
+      unsubInterviews();
+      unsubApps();
     };
-  }, [isAuthReady]);
+  }, [isAuthReady, user]);
 
-  const activeCandidates = useMemo(() => candidates.filter(c => c.current_stage !== 'not_interested' && c.current_stage !== 'completed'), [candidates]);
-  const completedCount = useMemo(() => candidates.filter(c => c.current_stage === 'completed').length, [candidates]);
-  const notInterestedCount = useMemo(() => candidates.filter(c => c.current_stage === 'not_interested').length, [candidates]);
+  const activeCandidates = useMemo(() => {
+    let filtered = candidates.filter(c => c.current_stage !== 'not_interested' && c.current_stage !== 'completed');
+    if (user?.role === 'jpc_recruiter') {
+      filtered = filtered.filter(c => String(c.assigned_recruiter) === String(user.id));
+    } else if (user?.role === 'jpc_lead_gen') {
+      filtered = filtered.filter(c => String(c.lead_generated_by) === String(user.id));
+    }
+    return filtered;
+  }, [candidates, user]);
+
+  const completedCount = useMemo(() => {
+    let filtered = candidates.filter(c => c.current_stage === 'completed');
+    if (user?.role === 'jpc_recruiter') {
+      filtered = filtered.filter(c => String(c.assigned_recruiter) === String(user.id));
+    } else if (user?.role === 'jpc_lead_gen') {
+      filtered = filtered.filter(c => String(c.lead_generated_by) === String(user.id));
+    }
+    return filtered.length;
+  }, [candidates, user]);
+
+  const notInterestedCount = useMemo(() => {
+    let filtered = candidates.filter(c => c.current_stage === 'not_interested');
+    if (user?.role === 'jpc_recruiter') {
+      filtered = filtered.filter(c => String(c.assigned_recruiter) === String(user.id));
+    } else if (user?.role === 'jpc_lead_gen') {
+      filtered = filtered.filter(c => String(c.lead_generated_by) === String(user.id));
+    }
+    return filtered.length;
+  }, [candidates, user]);
   
   const today = new Date().toISOString().split('T')[0];
   const personalFollowUps = useMemo(() => {
@@ -44,6 +101,50 @@ export const Dashboard: React.FC = () => {
 
   const dueTodayCount = useMemo(() => personalFollowUps.filter(f => !f.done && f.followup_date <= today).length, [personalFollowUps, today]);
 
+  const pendingResumeRequests = useMemo(() => {
+    if (user?.role === 'jpc_marketing') return resumeRequests.filter(r => r.status === 'pending_tl');
+    if (user?.role === 'jpc_cs') return resumeRequests.filter(r => r.status === 'pending_cs');
+    if (user?.role === 'jpc_resume') return resumeRequests.filter(r => r.status === 'pending_resume_team');
+    return [];
+  }, [resumeRequests, user]);
+
+  const activeInterviews = useMemo(() => {
+    if (user?.role === 'jpc_proxy') return interviews.filter(i => ['pending_proxy', 'scheduled', 'live'].includes(i.status));
+    if (user?.role === 'jpc_cs') return interviews.filter(i => ['pending_proxy', 'scheduled', 'live', 'feedback_shared', 'result_pending', 'next_round', 'rejected'].includes(i.status));
+    return [];
+  }, [interviews, user]);
+
+  const appStats = useMemo(() => {
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+    
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    
+    let filteredApps = applications;
+    if (user?.role === 'jpc_recruiter') {
+      // Recruiters only see apps for their assigned candidates
+      const myCandidateIds = candidates
+        .filter(c => String(c.assigned_recruiter) === String(user.id))
+        .map(c => c.id);
+      filteredApps = applications.filter(a => myCandidateIds.includes(a.candidate_id));
+    }
+    
+    const dayApps = filteredApps.filter(a => a.applied_at === todayStr);
+    const weekApps = filteredApps.filter(a => new Date(a.applied_at) >= startOfWeek);
+    const monthApps = filteredApps.filter(a => new Date(a.applied_at) >= startOfMonth);
+    
+    return {
+      day: dayApps.length,
+      week: weekApps.length,
+      month: monthApps.length,
+      lifetime: filteredApps.length
+    };
+  }, [applications, user, candidates]);
+
   const stats = [
     { label: 'Active Candidates', value: activeCandidates.length, icon: Users, color: 'text-accent-blue', bg: 'bg-accent-blue/10' },
     { label: 'Completed', value: completedCount, icon: CheckCircle2, color: 'text-accent-green', bg: 'bg-accent-green/10' },
@@ -51,7 +152,37 @@ export const Dashboard: React.FC = () => {
     { label: 'Not Interested', value: notInterestedCount, icon: UserX, color: 'text-accent-red', bg: 'bg-accent-red/10' },
   ];
 
-  const recentCandidates = useMemo(() => [...candidates].sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()).slice(0, 5), [candidates]);
+  const targetAlerts = useMemo(() => {
+    if (user?.role !== 'administrator' && user?.role !== 'jpc_sysadmin' && user?.role !== 'jpc_manager') return [];
+    
+    const todayStr = new Date().toISOString().split('T')[0];
+    const alerts: { candidate: Candidate, count: number, target: number }[] = [];
+    
+    // Only check candidates in marketing stages
+    const marketingCandidates = candidates.filter(c => 
+      ['marketing_leader', 'marketing_active', 'application_tracking'].includes(c.current_stage)
+    );
+
+    marketingCandidates.forEach(c => {
+      const dayApps = applications.filter(a => a.candidate_id === c.id && a.applied_at === todayStr).length;
+      const target = (c.profiles_count || 1) * 40;
+      if (dayApps < target) {
+        alerts.push({ candidate: c, count: dayApps, target });
+      }
+    });
+
+    return alerts.sort((a, b) => a.count - b.count);
+  }, [candidates, applications, user]);
+
+  const recentCandidates = useMemo(() => {
+    let filtered = [...candidates];
+    if (user?.role === 'jpc_recruiter') {
+      filtered = filtered.filter(c => String(c.assigned_recruiter) === String(user.id));
+    } else if (user?.role === 'jpc_lead_gen') {
+      filtered = filtered.filter(c => String(c.lead_generated_by) === String(user.id));
+    }
+    return filtered.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()).slice(0, 5);
+  }, [candidates, user]);
 
   if (isLoading) {
     return (
@@ -99,6 +230,85 @@ export const Dashboard: React.FC = () => {
         ))}
       </div>
 
+      {/* Application Performance */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="bg-bg-secondary border border-border-primary rounded-[32px] p-8 shadow-sm">
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h2 className="text-2xl font-bold text-text-primary tracking-tight">Application Performance</h2>
+              <p className="text-text-secondary mt-1">Real-time tracking of job applications across the team.</p>
+            </div>
+            <div className="w-12 h-12 bg-accent-blue/10 rounded-2xl flex items-center justify-center text-accent-blue">
+              <TrendingUp className="w-6 h-6" />
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-8">
+            <div className="space-y-1">
+              <p className="text-xs font-bold text-text-muted uppercase tracking-widest">Today</p>
+              <p className="text-4xl font-bold text-text-primary">{appStats.day}</p>
+              <div className="h-1 w-12 bg-accent-blue rounded-full mt-2" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-bold text-text-muted uppercase tracking-widest">This Week</p>
+              <p className="text-4xl font-bold text-text-primary">{appStats.week}</p>
+              <div className="h-1 w-12 bg-accent-purple rounded-full mt-2" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-bold text-text-muted uppercase tracking-widest">This Month</p>
+              <p className="text-4xl font-bold text-text-primary">{appStats.month}</p>
+              <div className="h-1 w-12 bg-accent-teal rounded-full mt-2" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-bold text-text-muted uppercase tracking-widest">Lifetime</p>
+              <p className="text-4xl font-bold text-text-primary">{appStats.lifetime}</p>
+              <div className="h-1 w-12 bg-accent-green rounded-full mt-2" />
+            </div>
+          </div>
+        </div>
+
+        {targetAlerts.length > 0 && (
+          <div className="bg-bg-secondary border border-border-primary rounded-[32px] p-8 shadow-sm">
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h2 className="text-2xl font-bold text-text-primary tracking-tight">Target Not Met</h2>
+                <p className="text-text-secondary mt-1">Candidates below daily application target (40/profile).</p>
+              </div>
+              <div className="w-12 h-12 bg-accent-red/10 rounded-2xl flex items-center justify-center text-accent-red">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+            </div>
+            
+            <div className="space-y-4 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
+              {targetAlerts.map(({ candidate, count, target }) => (
+                <div key={candidate.id} className="flex items-center justify-between p-3 bg-bg-tertiary/50 rounded-2xl border border-border-primary">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-bg-secondary flex items-center justify-center text-[10px] font-bold text-text-secondary">
+                      {candidate.full_name.split(' ').map(n => n[0]).join('')}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-text-primary">{candidate.full_name}</p>
+                      <p className="text-[10px] text-text-muted uppercase font-bold">{STAGES[candidate.current_stage].label}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className={cn("text-sm font-bold", count === 0 ? "text-accent-red" : "text-accent-amber")}>
+                      {count} / {target}
+                    </p>
+                    <div className="w-20 h-1 bg-bg-tertiary rounded-full mt-1 overflow-hidden">
+                      <div 
+                        className={cn("h-full", count === 0 ? "bg-accent-red" : "bg-accent-amber")} 
+                        style={{ width: `${(count / target) * 100}%` }} 
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Pipeline Overview */}
         <div className="lg:col-span-2 space-y-6">
@@ -108,7 +318,17 @@ export const Dashboard: React.FC = () => {
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {Object.entries(STAGES).filter(([key]) => key !== 'not_interested').map(([key, stage], i) => {
-              const count = candidates.filter(c => c.current_stage === key).length;
+              const count = candidates.filter(c => {
+                const matchesStage = c.current_stage === key;
+                if (!matchesStage) return false;
+                
+                if (user?.role === 'jpc_recruiter') {
+                  return String(c.assigned_recruiter) === String(user.id);
+                } else if (user?.role === 'jpc_lead_gen') {
+                  return String(c.lead_generated_by) === String(user.id);
+                }
+                return true;
+              }).length;
               return (
                 <motion.a
                   key={key}
@@ -136,10 +356,108 @@ export const Dashboard: React.FC = () => {
 
         {/* Recent Activity / Follow-ups */}
         <div className="space-y-6">
+          {notifications.length > 0 && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-accent-red" />
+                Team Alerts
+              </h2>
+              <div className="space-y-3">
+                {notifications.filter(n => !n.read).map(n => (
+                  <div key={n.id} className="p-4 bg-accent-red/5 border border-accent-red/20 rounded-2xl relative group">
+                    <p className="text-xs text-text-primary pr-6">{n.message}</p>
+                    <p className="text-[10px] text-text-muted mt-2 font-bold uppercase">
+                      {new Date(n.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeInterviews.length > 0 && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
+                <Video className="w-5 h-5 text-accent-red" />
+                Active Interviews
+              </h2>
+              <div className="bg-bg-secondary rounded-3xl border border-border-primary overflow-hidden shadow-sm">
+                <div className="divide-y divide-border-primary">
+                  {activeInterviews.slice(0, 3).map(int => {
+                    const candidate = candidates.find(c => c.id === int.candidate_id);
+                    return (
+                      <a 
+                        key={int.id} 
+                        href="#interviews"
+                        className="p-4 flex items-center gap-4 hover:bg-bg-tertiary transition-colors group"
+                      >
+                        <div className={cn(
+                          "w-10 h-10 rounded-xl flex items-center justify-center",
+                          int.status === 'live' ? "bg-accent-red/10 text-accent-red animate-pulse" : "bg-accent-blue/10 text-accent-blue"
+                        )}>
+                          <Video className="w-5 h-5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-text-primary truncate">{candidate?.full_name || 'Candidate'}</p>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-mono text-text-muted">{candidate?.id}</span>
+                            <span className="text-[10px] text-text-muted">•</span>
+                            <p className="text-[10px] text-text-muted truncate capitalize">{int.status.replace('_', ' ')}</p>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-text-muted" />
+                      </a>
+                    );
+                  })}
+                </div>
+                <div className="p-3 bg-bg-tertiary/50 border-t border-border-primary">
+                  <a href="#interviews" className="text-[10px] font-bold text-accent-blue hover:underline flex items-center justify-center gap-1 uppercase tracking-wider">
+                    View All Interviews <ArrowRight className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
+
           <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
             <Clock className="w-5 h-5 text-accent-amber" />
             Recent Updates
           </h2>
+          
+          {pendingResumeRequests.length > 0 && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
+                <FileEdit className="w-5 h-5 text-accent-blue" />
+                Resume Requests
+              </h2>
+              <div className="bg-bg-secondary rounded-3xl border border-border-primary overflow-hidden shadow-sm">
+                <div className="divide-y divide-border-primary">
+                  {pendingResumeRequests.slice(0, 3).map(req => (
+                    <a 
+                      key={req.id} 
+                      href="#resume-log"
+                      className="p-4 flex items-center gap-4 hover:bg-bg-tertiary transition-colors group"
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-accent-blue/10 flex items-center justify-center text-accent-blue">
+                        <FileEdit className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-text-primary truncate">Resume Change Needed</p>
+                        <p className="text-xs text-text-muted truncate">{req.details}</p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-text-muted" />
+                    </a>
+                  ))}
+                </div>
+                <div className="p-3 bg-bg-tertiary/50 border-t border-border-primary">
+                  <a href="#resume-log" className="text-[10px] font-bold text-accent-blue hover:underline flex items-center justify-center gap-1 uppercase tracking-wider">
+                    View All Requests <ArrowRight className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="bg-bg-secondary rounded-3xl border border-border-primary overflow-hidden shadow-sm">
             <div className="divide-y divide-border-primary">
               {recentCandidates.length > 0 ? recentCandidates.map(candidate => (
@@ -152,7 +470,10 @@ export const Dashboard: React.FC = () => {
                     {candidate.full_name.split(' ').map(n => n[0]).join('')}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-text-primary truncate">{candidate.full_name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-bold text-text-primary truncate">{candidate.full_name}</p>
+                      <span className="text-[10px] font-mono text-text-muted">{candidate.id}</span>
+                    </div>
                     <p className="text-xs text-text-muted truncate">
                       Moved to <span className="text-accent-blue font-medium">{STAGES[candidate.current_stage].label}</span>
                     </p>
