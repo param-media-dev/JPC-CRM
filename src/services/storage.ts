@@ -270,6 +270,22 @@ export const migrateAllChecklists = async () => {
   }
 };
 
+// Notifications
+export const addNotification = async (notification: Omit<Notification, 'id' | 'created_at' | 'read'>) => {
+  const id = generateId();
+  const data = { 
+    ...notification, 
+    id, 
+    read: false, 
+    created_at: new Date().toISOString() 
+  };
+  try {
+    await setDoc(doc(db, 'jpc_notifications', id), data);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `jpc_notifications/${id}`);
+  }
+};
+
 // Follow-ups
 export const addFollowUp = async (followUp: Omit<FollowUp, 'id' | 'created_at'>) => {
   const id = generateId();

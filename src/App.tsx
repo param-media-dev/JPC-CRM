@@ -17,6 +17,7 @@ import { AppTracker } from './pages/AppTracker';
 import { ResumeLogBook } from './pages/ResumeLogBook';
 import { InterviewSupport } from './pages/InterviewSupport';
 import { AddCandidateModal } from './components/AddCandidateModal';
+import { NotificationList } from './components/NotificationList';
 import { seedData } from './services/seeding';
 import { migrateAllChecklists, testConnection } from './services/storage';
 import { Plus, Menu } from 'lucide-react';
@@ -143,6 +144,7 @@ const AppContent: React.FC = () => {
             </button>
             
             <div className="flex items-center gap-4 ml-auto">
+              <NotificationList />
               {user?.role !== 'candidate' && (
                 <button 
                   onClick={() => setIsAddModalOpen(true)}

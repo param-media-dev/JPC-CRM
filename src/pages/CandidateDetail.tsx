@@ -3,6 +3,7 @@ import {
   subscribeToCollection,
   saveCandidate, 
   logActivity, 
+  addNotification,
   addPayment, 
   updatePayment,
   addPromise,
@@ -422,6 +423,20 @@ export const CandidateDetail: React.FC = () => {
 
   const handleSavePackage = async () => {
     await saveCandidate({ ...candidate, ...packageForm } as Candidate, user?.id || null);
+    
+    // Check for assignments
+    const assignmentFields = ['assigned_cs', 'assigned_resume', 'assigned_marketing_leader', 'assigned_recruiter', 'assigned_marketing'];
+    for (const field of assignmentFields) {
+      if (packageForm[field as keyof Candidate] !== candidate[field as keyof Candidate] && packageForm[field as keyof Candidate]) {
+        await addNotification({
+          recipient_id: packageForm[field as keyof Candidate] as string,
+          sender_id: user?.id || null,
+          type: 'system_alert',
+          message: `You have been assigned to candidate ${candidate.full_name}`
+        });
+      }
+    }
+
     await logActivity(candidate.id, 'Updated package info', 'Package and team assignment details were updated.', user?.id || null);
     setIsEditingPackage(false);
     showToast('Package info updated', 'success');
