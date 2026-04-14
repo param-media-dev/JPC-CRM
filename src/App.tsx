@@ -90,7 +90,7 @@ const AppContent: React.FC = () => {
         return <Dashboard />;
       case '#pipeline': 
         if (user?.role === 'candidate') return <CandidateDetail />;
-        if (user?.role !== 'administrator' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_cs' && user?.role !== 'jpc_recruiter' && user?.role !== 'jpc_marketing') return <Dashboard />;
+        if (user?.role !== 'administrator' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_cs' && user?.role !== 'jpc_recruiter' && user?.role !== 'jpc_marketing' && user?.role !== 'jpc_sales') return <Dashboard />;
         return <Pipeline />;
       case '#candidates': 
         if (user?.role === 'candidate') return <CandidateDetail />;
