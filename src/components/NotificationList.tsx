@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Bell, X } from 'lucide-react';
-import { subscribeToCollection } from '../services/storage';
+import { collection, query, where } from 'firebase/firestore';
+import { db } from '../firebase';
+import { subscribeToQuery } from '../services/storage';
 import { Notification } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { cn } from '../lib/utils';
@@ -12,9 +14,10 @@ export const NotificationList: React.FC = () => {
 
   useEffect(() => {
     if (!user) return;
-    return subscribeToCollection<Notification>('jpc_notifications', (data) => {
-      setNotifications(data.filter(n => n.recipient_id === user.id && !n.read));
-    });
+    const q = query(collection(db, 'jpc_notifications'), where('recipient_id', '==', user.id), where('read', '==', false));
+    return subscribeToQuery<Notification>(q, (data) => {
+      setNotifications(data);
+    }, 'jpc_notifications');
   }, [user]);
 
   return (
