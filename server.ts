@@ -19,11 +19,80 @@ async function startServer() {
   // Configure Multer for memory storage
   const upload = multer({ storage: multer.memoryStorage() });
 
-  app.use(express.json());
+  app.use(express.json({ limit: '10mb' }));
   
   // Health check
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok' });
+  });
+
+  // Resume Parsing API Proxy
+  app.post('/api/parse-resume', async (req, res) => {
+    try {
+      const { fileBase64, mimeType } = req.body;
+      if (!fileBase64 || !mimeType) {
+        return res.status(400).json({ error: 'Missing file data' });
+      }
+
+      const { GoogleGenAI, Type } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                data: fileBase64,
+                mimeType: mimeType,
+              },
+            },
+            {
+              text: "Extract candidate information from this resume. Return the data in JSON format following the provided schema. If a field is not found, return an empty string.",
+            },
+          ],
+        },
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              full_name: { type: Type.STRING },
+              phone: { type: Type.STRING },
+              email: { type: Type.STRING },
+              job_interest: { type: Type.STRING },
+              location: { type: Type.STRING },
+              education: { type: Type.STRING },
+              degree: { type: Type.STRING },
+              university: { type: Type.STRING },
+              graduation_year: { type: Type.STRING },
+              experience_years: { type: Type.STRING },
+              current_company: { type: Type.STRING },
+              current_designation: { type: Type.STRING },
+              skills: { type: Type.STRING },
+              linkedin_url: { type: Type.STRING },
+              notes: { type: Type.STRING },
+            },
+            required: ["full_name", "phone", "email"],
+          },
+        },
+      });
+
+      if (response.text) {
+        res.json(JSON.parse(response.text.trim()));
+      } else {
+        res.status(500).json({ error: 'No response from AI' });
+      }
+    } catch (error: any) {
+      console.error('Resume Parsing Error:', error);
+      
+      // Check for rate limit error (429)
+      if (error.status === 429 || error.message?.includes('429')) {
+        res.status(429).json({ error: 'Rate limit exceeded. Please try again in a few minutes.' });
+      } else {
+        res.status(500).json({ error: 'Failed to parse resume', details: error.message });
+      }
+    }
   });
 
   // API Proxy Route for File Upload

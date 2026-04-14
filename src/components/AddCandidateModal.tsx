@@ -121,9 +121,13 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
         }
       };
       reader.readAsDataURL(file);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error reading file:', error);
-      showToast('Error reading file', 'error');
+      if (error.message?.includes('429')) {
+        showToast('Rate limit exceeded. Please try again in a few minutes.', 'error');
+      } else {
+        showToast('Error reading file', 'error');
+      }
     } finally {
       setIsParsing(false);
       if (fileInputRef.current) fileInputRef.current.value = '';

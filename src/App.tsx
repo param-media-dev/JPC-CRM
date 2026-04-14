@@ -89,6 +89,7 @@ const AppContent: React.FC = () => {
         return <Dashboard />;
       case '#pipeline': 
         if (user?.role === 'candidate') return <CandidateDetail />;
+        if (user?.role !== 'administrator' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_cs' && user?.role !== 'jpc_recruiter' && user?.role !== 'jpc_marketing') return <Dashboard />;
         return <Pipeline />;
       case '#candidates': 
         if (user?.role === 'candidate') return <CandidateDetail />;
@@ -113,9 +114,6 @@ const AppContent: React.FC = () => {
       case '#interviews': 
         if (user?.role !== 'administrator' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_cs' && user?.role !== 'jpc_recruiter' && user?.role !== 'jpc_proxy') return <Dashboard />;
         return <InterviewSupport />;
-      case '#pipeline':
-        if (user?.role !== 'administrator' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_cs' && user?.role !== 'jpc_recruiter' && user?.role !== 'jpc_marketing') return <Dashboard />;
-        return <Pipeline />;
       default: 
         if (user?.role === 'candidate') return <CandidateDetail />;
         return <Dashboard />;
@@ -167,7 +165,6 @@ const AppContent: React.FC = () => {
         isOpen={isAddModalOpen} 
         onClose={() => setIsAddModalOpen(false)}
         onSuccess={() => {
-          // Trigger a re-render of the current page if needed
           window.dispatchEvent(new HashChangeEvent('hashchange'));
         }}
       />
