@@ -20,6 +20,11 @@ async function startServer() {
   const upload = multer({ storage: multer.memoryStorage() });
 
   app.use(express.json());
+  
+  // Health check
+  app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok' });
+  });
 
   // API Proxy Route for File Upload
   app.post('/api/upload', upload.single('file'), async (req, res) => {
