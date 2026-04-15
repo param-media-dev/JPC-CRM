@@ -182,21 +182,13 @@ export const LoginPage: React.FC = () => {
             </button>
 
             <div className="text-center space-y-2">
-              {isResetting ? (
+              {isResetting && (
                 <button 
                   type="button"
                   onClick={() => setIsResetting(false)}
                   className="text-sm font-medium text-accent-blue hover:underline"
                 >
                   Back to Sign In
-                </button>
-              ) : (
-                <button 
-                  type="button"
-                  onClick={() => setIsSignup(!isSignup)}
-                  className="text-sm font-medium text-accent-blue hover:underline"
-                >
-                  {isSignup ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
                 </button>
               )}
             </div>

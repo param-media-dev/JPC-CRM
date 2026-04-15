@@ -408,7 +408,23 @@ export const CandidateDetail: React.FC = () => {
   };
 
   const handleSavePersonal = async () => {
+    const oldNotes = candidate.notes;
+    const newNotes = personalForm.notes;
+    
     await saveCandidate({ ...candidate, ...personalForm } as Candidate, user?.id || null);
+    
+    if (oldNotes !== newNotes) {
+      const teamMembers = [candidate.assigned_sales, candidate.assigned_cs, candidate.assigned_recruiter].filter(Boolean);
+      for (const memberId of teamMembers) {
+        await addNotification({
+          recipient_id: memberId as string,
+          sender_id: user?.id || null,
+          type: 'system_alert',
+          message: `Notes for candidate ${candidate.full_name} have been updated.`
+        });
+      }
+    }
+
     await logActivity(candidate.id, 'Updated personal info', 'Personal information details were updated.', user?.id || null);
     setIsEditingPersonal(false);
     showToast('Personal info updated', 'success');
@@ -416,6 +432,17 @@ export const CandidateDetail: React.FC = () => {
 
   const handleSaveEducation = async () => {
     await saveCandidate({ ...candidate, ...educationForm } as Candidate, user?.id || null);
+    
+    const teamMembers = [candidate.assigned_sales, candidate.assigned_cs, candidate.assigned_recruiter].filter(Boolean);
+    for (const memberId of teamMembers) {
+      await addNotification({
+        recipient_id: memberId as string,
+        sender_id: user?.id || null,
+        type: 'system_alert',
+        message: `Education/Experience for candidate ${candidate.full_name} has been updated.`
+      });
+    }
+
     await logActivity(candidate.id, 'Updated education info', 'Education and experience details were updated.', user?.id || null);
     setIsEditingEducation(false);
     showToast('Education info updated', 'success');
@@ -425,7 +452,7 @@ export const CandidateDetail: React.FC = () => {
     await saveCandidate({ ...candidate, ...packageForm } as Candidate, user?.id || null);
     
     // Check for assignments
-    const assignmentFields = ['assigned_cs', 'assigned_resume', 'assigned_marketing_leader', 'assigned_recruiter', 'assigned_marketing'];
+    const assignmentFields = ['assigned_cs', 'assigned_resume', 'assigned_marketing_leader', 'assigned_recruiter', 'assigned_marketing', 'assigned_sales'];
     for (const field of assignmentFields) {
       if (packageForm[field as keyof Candidate] !== candidate[field as keyof Candidate] && packageForm[field as keyof Candidate]) {
         await addNotification({
@@ -453,6 +480,17 @@ export const CandidateDetail: React.FC = () => {
     };
     
     await saveCandidate(updated, user?.id || null);
+    
+    const teamMembers = [candidate.assigned_sales, candidate.assigned_cs, candidate.assigned_recruiter].filter(Boolean);
+    for (const memberId of teamMembers) {
+      await addNotification({
+        recipient_id: memberId as string,
+        sender_id: user?.id || null,
+        type: 'system_alert',
+        message: `Candidate ${candidate.full_name} moved from ${oldStageLabel} to ${newStageLabel}.`
+      });
+    }
+
     await logActivity(candidate.id, 'Stage moved', `Moved from ${oldStageLabel} to ${newStageLabel}`, user?.id || null);
     showToast(`Moved to ${newStageLabel}`, 'success');
   };

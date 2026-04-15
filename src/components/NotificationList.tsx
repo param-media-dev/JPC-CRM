@@ -1,24 +1,56 @@
-import React, { useEffect, useState } from 'react';
-import { Bell, X } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { Bell, X, Check } from 'lucide-react';
 import { collection, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
-import { subscribeToQuery } from '../services/storage';
-import { Notification } from '../types';
+import { subscribeToQuery, markNotificationAsRead } from '../services/storage';
+import { Notification as AppNotification } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { cn } from '../lib/utils';
 
 export const NotificationList: React.FC = () => {
   const { user } = useAuth();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isOpen, setIsOpen] = useState(false);
+  const prevNotificationsRef = useRef<AppNotification[]>([]);
+  const isInitialLoad = useRef(true);
+
+  useEffect(() => {
+    // Request notification permission on mount
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
 
   useEffect(() => {
     if (!user) return;
-    const q = query(collection(db, 'jpc_notifications'), where('recipient_id', '==', user.id), where('read', '==', false));
-    return subscribeToQuery<Notification>(q, (data) => {
+    const q = query(collection(db, 'jpc_notifications'), where('recipient_id', '==', String(user.id)), where('read', '==', false));
+    return subscribeToQuery<AppNotification>(q, (data) => {
+      // Check for new notifications to trigger push
+      if (!isInitialLoad.current && 'Notification' in window && Notification.permission === 'granted') {
+        const prevIds = new Set(prevNotificationsRef.current.map(n => n.id));
+        const newNotifications = data.filter(n => !prevIds.has(n.id));
+        
+        newNotifications.forEach(n => {
+          // Don't show push for notifications created more than 1 minute ago
+          const isRecent = (new Date().getTime() - new Date(n.created_at).getTime()) < 60000;
+          if (isRecent) {
+            new Notification('New Placify Alert', {
+              body: n.message,
+              icon: '/favicon.ico' // fallback icon
+            });
+          }
+        });
+      }
+      
+      isInitialLoad.current = false;
+      prevNotificationsRef.current = data;
       setNotifications(data);
     }, 'jpc_notifications');
   }, [user]);
+
+  const handleMarkAsRead = async (id: string) => {
+    await markNotificationAsRead(id);
+  };
 
   return (
     <div className="relative">
@@ -41,9 +73,18 @@ export const NotificationList: React.FC = () => {
               <p className="p-4 text-text-secondary text-sm">No new notifications</p>
             ) : (
               notifications.map(n => (
-                <div key={n.id} className="p-4 border-b border-border-primary hover:bg-bg-tertiary">
-                  <p className="text-sm text-text-primary">{n.message}</p>
-                  <span className="text-xs text-text-secondary">{new Date(n.created_at).toLocaleString()}</span>
+                <div key={n.id} className="p-4 border-b border-border-primary hover:bg-bg-tertiary flex justify-between items-start group">
+                  <div>
+                    <p className="text-sm text-text-primary">{n.message}</p>
+                    <span className="text-xs text-text-secondary">{new Date(n.created_at).toLocaleString()}</span>
+                  </div>
+                  <button 
+                    onClick={() => handleMarkAsRead(n.id)}
+                    className="opacity-0 group-hover:opacity-100 p-1 hover:bg-bg-secondary rounded transition-opacity"
+                    title="Mark as read"
+                  >
+                    <Check className="w-4 h-4 text-accent-green" />
+                  </button>
                 </div>
               ))
             )}

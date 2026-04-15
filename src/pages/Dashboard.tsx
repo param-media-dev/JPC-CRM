@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { subscribeToCollection, subscribeToQuery } from '../services/storage';
+import { subscribeToCollection, subscribeToQuery, markNotificationAsRead } from '../services/storage';
 import { STAGES } from '../constants';
-import { Users, CheckCircle2, Clock, UserX, ArrowRight, LayoutGrid, Phone, Calendar, ArrowUpRight, AlertCircle, ChevronRight, FileEdit, Video, TrendingUp } from 'lucide-react';
+import { Users, CheckCircle2, Clock, UserX, ArrowRight, LayoutGrid, Phone, Calendar, ArrowUpRight, AlertCircle, ChevronRight, FileEdit, Video, TrendingUp, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { Candidate, FollowUp, Notification, ResumeChangeRequest, InterviewRequest, Application } from '../types';
@@ -364,11 +364,20 @@ export const Dashboard: React.FC = () => {
               </h2>
               <div className="space-y-3">
                 {notifications.filter(n => !n.read).map(n => (
-                  <div key={n.id} className="p-4 bg-accent-red/5 border border-accent-red/20 rounded-2xl relative group">
-                    <p className="text-xs text-text-primary pr-6">{n.message}</p>
-                    <p className="text-[10px] text-text-muted mt-2 font-bold uppercase">
-                      {new Date(n.created_at).toLocaleString()}
-                    </p>
+                  <div key={n.id} className="p-4 bg-accent-red/5 border border-accent-red/20 rounded-2xl relative group flex justify-between items-start">
+                    <div>
+                      <p className="text-xs text-text-primary pr-6">{n.message}</p>
+                      <p className="text-[10px] text-text-muted mt-2 font-bold uppercase">
+                        {new Date(n.created_at).toLocaleString()}
+                      </p>
+                    </div>
+                    <button 
+                      onClick={() => markNotificationAsRead(n.id)}
+                      className="opacity-0 group-hover:opacity-100 p-1 hover:bg-accent-red/10 rounded transition-opacity"
+                      title="Mark as read"
+                    >
+                      <Check className="w-4 h-4 text-accent-red" />
+                    </button>
                   </div>
                 ))}
               </div>

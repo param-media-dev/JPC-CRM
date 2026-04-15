@@ -13,7 +13,7 @@ import {
   getDocFromServer
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
-import { Candidate, Payment, Promise as PromiseType, QCChecklistItem, FollowUp, ActivityLog, User, Stage, InterviewRequest } from '../types';
+import { Candidate, Payment, Promise as PromiseType, QCChecklistItem, FollowUp, ActivityLog, User, Stage, InterviewRequest, Notification as AppNotification } from '../types';
 
 export enum OperationType {
   CREATE = 'create',
@@ -271,7 +271,7 @@ export const migrateAllChecklists = async () => {
 };
 
 // Notifications
-export const addNotification = async (notification: Omit<Notification, 'id' | 'created_at' | 'read'>) => {
+export const addNotification = async (notification: Omit<AppNotification, 'id' | 'created_at' | 'read'>) => {
   const id = generateId();
   const data = { 
     ...notification, 
@@ -283,6 +283,14 @@ export const addNotification = async (notification: Omit<Notification, 'id' | 'c
     await setDoc(doc(db, 'jpc_notifications', id), data);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `jpc_notifications/${id}`);
+  }
+};
+
+export const markNotificationAsRead = async (id: string) => {
+  try {
+    await updateDoc(doc(db, 'jpc_notifications', id), { read: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `jpc_notifications/${id}`);
   }
 };
 

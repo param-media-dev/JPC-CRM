@@ -200,8 +200,8 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    // In production, we might be running from the root or from within build
-    const possibleDistPath = path.join(process.cwd(), 'build');
+    // In production, we might be running from the root or from within dist
+    const possibleDistPath = path.join(process.cwd(), 'dist');
     const distPath = fs.existsSync(path.join(possibleDistPath, 'index.html')) 
       ? possibleDistPath 
       : process.cwd();
