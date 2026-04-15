@@ -33,9 +33,11 @@ export const Dashboard: React.FC = () => {
 
     let unsubNotifications = () => {};
     if (user) {
+      // FIX: Also filter read == false so only unread notifications appear
       const q = query(
         collection(db, 'jpc_notifications'),
-        where('recipient_id', '==', String(user.id))
+        where('recipient_id', '==', String(user.id)),
+        where('read', '==', false)
       );
       unsubNotifications = subscribeToQuery<Notification>(q, setNotifications, 'jpc_notifications');
     }
