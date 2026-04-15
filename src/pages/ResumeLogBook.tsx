@@ -257,9 +257,10 @@ export const ResumeLogBook: React.FC = () => {
       
       const request = requests.find(r => r.id === requestId);
       if (request) {
+        // FIX: Wrap recipient_id and sender_id in String() for consistent Firestore query matching
         await addNotification({
-          recipient_id: request.recruiter_id,
-          sender_id: user?.id || null,
+          recipient_id: String(request.recruiter_id),
+          sender_id: user?.id ? String(user.id) : null,
           type: 'resume_request',
           message: `Resume request for candidate ${candidates.find(c => c.id === request.candidate_id)?.full_name || 'Unknown'} has been updated to ${newStatus.replace('_', ' ')}`
         });
