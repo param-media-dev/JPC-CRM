@@ -417,8 +417,8 @@ export const CandidateDetail: React.FC = () => {
       const teamMembers = [candidate.assigned_sales, candidate.assigned_cs, candidate.assigned_recruiter].filter(Boolean);
       for (const memberId of teamMembers) {
         await addNotification({
-          recipient_id: memberId as string,
-          sender_id: user?.id || null,
+          recipient_id: String(memberId),
+          sender_id: user?.id ? String(user.id) : null,
           type: 'system_alert',
           message: `Notes for candidate ${candidate.full_name} have been updated.`
         });
@@ -436,8 +436,8 @@ export const CandidateDetail: React.FC = () => {
     const teamMembers = [candidate.assigned_sales, candidate.assigned_cs, candidate.assigned_recruiter].filter(Boolean);
     for (const memberId of teamMembers) {
       await addNotification({
-        recipient_id: memberId as string,
-        sender_id: user?.id || null,
+        recipient_id: String(memberId),
+        sender_id: user?.id ? String(user.id) : null,
         type: 'system_alert',
         message: `Education/Experience for candidate ${candidate.full_name} has been updated.`
       });
@@ -456,8 +456,8 @@ export const CandidateDetail: React.FC = () => {
     for (const field of assignmentFields) {
       if (packageForm[field as keyof Candidate] !== candidate[field as keyof Candidate] && packageForm[field as keyof Candidate]) {
         await addNotification({
-          recipient_id: packageForm[field as keyof Candidate] as string,
-          sender_id: user?.id || null,
+          recipient_id: String(packageForm[field as keyof Candidate]),
+          sender_id: user?.id ? String(user.id) : null,
           type: 'system_alert',
           message: `You have been assigned to candidate ${candidate.full_name}`
         });
@@ -484,8 +484,8 @@ export const CandidateDetail: React.FC = () => {
     const teamMembers = [candidate.assigned_sales, candidate.assigned_cs, candidate.assigned_recruiter].filter(Boolean);
     for (const memberId of teamMembers) {
       await addNotification({
-        recipient_id: memberId as string,
-        sender_id: user?.id || null,
+        recipient_id: String(memberId),
+        sender_id: user?.id ? String(user.id) : null,
         type: 'system_alert',
         message: `Candidate ${candidate.full_name} moved from ${oldStageLabel} to ${newStageLabel}.`
       });
