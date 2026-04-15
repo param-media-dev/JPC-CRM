@@ -1,190 +1,564 @@
-import React, { useState, useEffect } from 'react';
-import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { ThemeProvider } from './contexts/ThemeContext';
-import { ToastProvider } from './contexts/ToastContext';
-import { LoginPage } from './pages/LoginPage';
-import { CandidateDashboard } from './pages/CandidateDashboard';
-import { Sidebar } from './components/Sidebar';
-import { Dashboard } from './pages/Dashboard';
-import { Pipeline } from './pages/Pipeline';
-import { Candidates } from './pages/Candidates';
-import { CandidateDetail } from './pages/CandidateDetail';
-import { FollowUps } from './pages/FollowUps';
-import { NotInterested } from './pages/NotInterested';
-import { Team } from './pages/Team';
-import { Receipt } from './pages/Receipt';
-import { AppTracker } from './pages/AppTracker';
-import { ResumeLogBook } from './pages/ResumeLogBook';
-import { InterviewSupport } from './pages/InterviewSupport';
-import { AddCandidateModal } from './components/AddCandidateModal';
-import { NotificationList } from './components/NotificationList';
-import { NotificationProvider } from './contexts/NotificationContext';
-import { seedData } from './services/seeding';
-import { migrateAllChecklists, testConnection } from './services/storage';
-import { Plus, Menu } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import { subscribeToCollection, subscribeToQuery, markNotificationAsRead, addNotification } from '../services/storage';
+import { STAGES } from '../constants';
+import { Users, CheckCircle2, Clock, UserX, ArrowRight, LayoutGrid, Phone, Calendar, ArrowUpRight, AlertCircle, ChevronRight, FileEdit, Video, TrendingUp, Check, BellRing, Loader2 } from 'lucide-react';
+import { motion } from 'motion/react';
+import { cn } from '../lib/utils';
+import { Candidate, FollowUp, Notification, ResumeChangeRequest, InterviewRequest, Application } from '../types';
+import { db } from '../firebase';
+import { query, collection, where } from 'firebase/firestore';
 
-const AppContent: React.FC = () => {
-  const { user, isLoading, isAuthReady } = useAuth();
-  const [currentHash, setCurrentHash] = useState(window.location.hash || '#dashboard');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+export const Dashboard: React.FC = () => {
+  const { user, isAuthReady } = useAuth();
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [followUps, setFollowUps] = useState<FollowUp[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [resumeRequests, setResumeRequests] = useState<ResumeChangeRequest[]>([]);
+  const [interviews, setInterviews] = useState<InterviewRequest[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    if (isAuthReady) {
-      testConnection();
+  // Test notification state (admin only)
+  const [testNotifLoading, setTestNotifLoading] = useState(false);
+  const [testNotifResult, setTestNotifResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const handleTestNotification = async () => {
+    if (!user) return;
+    setTestNotifLoading(true);
+    setTestNotifResult(null);
+    try {
+      await addNotification({
+        recipient_id: String(user.id),
+        sender_id: String(user.id),
+        type: 'system_alert',
+        message: `Test notification sent to ${user.display_name} at ${new Date().toLocaleTimeString()}`,
+      });
+      setTestNotifResult({ success: true, message: 'Notification sent! Check the bell icon above.' });
+    } catch (err: any) {
+      let errorMsg = String(err);
+      try { errorMsg = JSON.parse(err?.message)?.error || err?.message || String(err); } catch {}
+      setTestNotifResult({ success: false, message: 'Error: ' + errorMsg });
+    } finally {
+      setTestNotifLoading(false);
+      setTimeout(() => setTestNotifResult(null), 8000);
     }
-  }, [isAuthReady]);
+  };
 
   useEffect(() => {
-    const handleHashChange = () => {
-      setCurrentHash(window.location.hash || '#dashboard');
-      window.scrollTo(0, 0);
+    if (!isAuthReady) return;
+
+    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
+      setCandidates(data);
+      setIsLoading(false);
+    });
+
+    const unsubFollowUps = subscribeToCollection<FollowUp>('jpc_followups', (data) => {
+      setFollowUps(data);
+    });
+
+    let unsubNotifications = () => {};
+    if (user) {
+      const q = query(
+        collection(db, 'jpc_notifications'),
+        where('recipient_id', '==', String(user.id)),
+        where('read', '==', false)
+      );
+      unsubNotifications = subscribeToQuery<Notification>(q, setNotifications, 'jpc_notifications');
+    }
+
+    const unsubResumeRequests = subscribeToCollection<ResumeChangeRequest>('jpc_resume_requests', (data) => {
+      setResumeRequests(data);
+    });
+
+    const unsubInterviews = subscribeToCollection<InterviewRequest>('jpc_interviews', (data) => {
+      setInterviews(data);
+    });
+
+    const unsubApps = subscribeToCollection<Application>('jpc_applications', (data) => {
+      setApplications(data);
+    });
+
+    return () => {
+      unsubCandidates();
+      unsubFollowUps();
+      unsubNotifications();
+      unsubResumeRequests();
+      unsubInterviews();
+      unsubApps();
     };
-
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
-
-  useEffect(() => {
-    if (isAuthReady && user) {
-      if (user.role === 'candidate' && user.candidate_id) {
-        const targetHash = `#candidate?id=${user.candidate_id}`;
-        if (window.location.hash !== targetHash) {
-          window.location.hash = targetHash;
-        }
-      }
-      
-      // Only run maintenance tasks for administrators
-      if (user.role === 'administrator') {
-        seedData().catch(console.error);
-        migrateAllChecklists().catch(console.error);
-      }
-    }
   }, [isAuthReady, user]);
+
+  const activeCandidates = useMemo(() => {
+    let filtered = candidates.filter(c => c.current_stage !== 'not_interested' && c.current_stage !== 'completed');
+    if (user?.role === 'jpc_recruiter') {
+      filtered = filtered.filter(c => String(c.assigned_recruiter) === String(user.id));
+    } else if (user?.role === 'jpc_lead_gen') {
+      filtered = filtered.filter(c => String(c.lead_generated_by) === String(user.id));
+    }
+    return filtered;
+  }, [candidates, user]);
+
+  const completedCount = useMemo(() => {
+    let filtered = candidates.filter(c => c.current_stage === 'completed');
+    if (user?.role === 'jpc_recruiter') {
+      filtered = filtered.filter(c => String(c.assigned_recruiter) === String(user.id));
+    } else if (user?.role === 'jpc_lead_gen') {
+      filtered = filtered.filter(c => String(c.lead_generated_by) === String(user.id));
+    }
+    return filtered.length;
+  }, [candidates, user]);
+
+  const notInterestedCount = useMemo(() => {
+    let filtered = candidates.filter(c => c.current_stage === 'not_interested');
+    if (user?.role === 'jpc_recruiter') {
+      filtered = filtered.filter(c => String(c.assigned_recruiter) === String(user.id));
+    } else if (user?.role === 'jpc_lead_gen') {
+      filtered = filtered.filter(c => String(c.lead_generated_by) === String(user.id));
+    }
+    return filtered.length;
+  }, [candidates, user]);
+  
+  const today = new Date().toISOString().split('T')[0];
+  const personalFollowUps = useMemo(() => {
+    return user?.role === 'administrator' || user?.role === 'jpc_manager' 
+      ? followUps 
+      : followUps.filter(f => f.created_by === user?.id);
+  }, [followUps, user]);
+
+  const dueTodayCount = useMemo(() => personalFollowUps.filter(f => !f.done && f.followup_date <= today).length, [personalFollowUps, today]);
+
+  const pendingResumeRequests = useMemo(() => {
+    if (user?.role === 'jpc_marketing') return resumeRequests.filter(r => r.status === 'pending_tl');
+    if (user?.role === 'jpc_cs') return resumeRequests.filter(r => r.status === 'pending_cs');
+    if (user?.role === 'jpc_resume') return resumeRequests.filter(r => r.status === 'pending_resume_team');
+    return [];
+  }, [resumeRequests, user]);
+
+  const activeInterviews = useMemo(() => {
+    if (user?.role === 'jpc_proxy') return interviews.filter(i => ['pending_proxy', 'scheduled', 'live'].includes(i.status));
+    if (user?.role === 'jpc_cs') return interviews.filter(i => ['pending_proxy', 'scheduled', 'live', 'feedback_shared', 'result_pending', 'next_round', 'rejected'].includes(i.status));
+    return [];
+  }, [interviews, user]);
+
+  const appStats = useMemo(() => {
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+    
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    
+    let filteredApps = applications;
+    if (user?.role === 'jpc_recruiter') {
+      // Recruiters only see apps for their assigned candidates
+      const myCandidateIds = candidates
+        .filter(c => String(c.assigned_recruiter) === String(user.id))
+        .map(c => c.id);
+      filteredApps = applications.filter(a => myCandidateIds.includes(a.candidate_id));
+    }
+    
+    const dayApps = filteredApps.filter(a => a.applied_at === todayStr);
+    const weekApps = filteredApps.filter(a => new Date(a.applied_at) >= startOfWeek);
+    const monthApps = filteredApps.filter(a => new Date(a.applied_at) >= startOfMonth);
+    
+    return {
+      day: dayApps.length,
+      week: weekApps.length,
+      month: monthApps.length,
+      lifetime: filteredApps.length
+    };
+  }, [applications, user, candidates]);
+
+  const stats = [
+    { label: 'Active Candidates', value: activeCandidates.length, icon: Users, color: 'text-accent-blue', bg: 'bg-accent-blue/10' },
+    { label: 'Completed', value: completedCount, icon: CheckCircle2, color: 'text-accent-green', bg: 'bg-accent-green/10' },
+    { label: 'Follow-Ups Due', value: dueTodayCount, icon: Clock, color: 'text-accent-amber', bg: 'bg-accent-amber/10' },
+    { label: 'Not Interested', value: notInterestedCount, icon: UserX, color: 'text-accent-red', bg: 'bg-accent-red/10' },
+  ];
+
+  const targetAlerts = useMemo(() => {
+    if (user?.role !== 'administrator' && user?.role !== 'jpc_sysadmin' && user?.role !== 'jpc_manager') return [];
+    
+    const todayStr = new Date().toISOString().split('T')[0];
+    const alerts: { candidate: Candidate, count: number, target: number }[] = [];
+    
+    // Only check candidates in marketing stages
+    const marketingCandidates = candidates.filter(c => 
+      ['marketing_leader', 'marketing_active', 'application_tracking'].includes(c.current_stage)
+    );
+
+    marketingCandidates.forEach(c => {
+      const dayApps = applications.filter(a => a.candidate_id === c.id && a.applied_at === todayStr).length;
+      const target = (c.profiles_count || 1) * 40;
+      if (dayApps < target) {
+        alerts.push({ candidate: c, count: dayApps, target });
+      }
+    });
+
+    return alerts.sort((a, b) => a.count - b.count);
+  }, [candidates, applications, user]);
+
+  const recentCandidates = useMemo(() => {
+    let filtered = [...candidates];
+    if (user?.role === 'jpc_recruiter') {
+      filtered = filtered.filter(c => String(c.assigned_recruiter) === String(user.id));
+    } else if (user?.role === 'jpc_lead_gen') {
+      filtered = filtered.filter(c => String(c.lead_generated_by) === String(user.id));
+    }
+    return filtered.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()).slice(0, 5);
+  }, [candidates, user]);
 
   if (isLoading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-bg-primary">
+      <div className="h-full flex items-center justify-center">
         <div className="w-12 h-12 border-4 border-accent-blue/30 border-t-accent-blue rounded-full animate-spin" />
       </div>
     );
   }
 
-  if (!user) {
-    return <LoginPage />;
-  }
-
-  const renderPage = () => {
-    const hash = currentHash.split('?')[0];
-    
-    if (user?.role === 'candidate' || user?.role === 'jpc_candidate') {
-      switch (hash) {
-        case '#dashboard': return <CandidateDashboard />;
-        case '#candidate': return <CandidateDetail />;
-        case '#receipt': return <Receipt />;
-        default: return <CandidateDashboard />;
-      }
-    }
-
-    switch (hash) {
-      case '#dashboard': 
-        return <Dashboard />;
-      case '#pipeline': 
-        if (user?.role === 'candidate') return <CandidateDetail />;
-        if (user?.role !== 'administrator' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_cs' && user?.role !== 'jpc_recruiter' && user?.role !== 'jpc_marketing' && user?.role !== 'jpc_sales') return <Dashboard />;
-        return <Pipeline />;
-      case '#candidates': 
-        if (user?.role === 'candidate') return <CandidateDetail />;
-        return <Candidates />;
-      case '#candidate': return <CandidateDetail />;
-      case '#followups': 
-        if (user?.role === 'candidate') return <CandidateDetail />;
-        return <FollowUps />;
-      case '#not-interested': 
-        if (user?.role !== 'administrator' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_sysadmin') return <Dashboard />;
-        return <NotInterested />;
-      case '#team': 
-        if (user?.role !== 'administrator' && user?.role !== 'jpc_manager') return <Dashboard />;
-        return <Team />;
-      case '#receipt': return <Receipt />;
-      case '#applications': 
-        if (user?.role !== 'administrator' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_cs' && user?.role !== 'jpc_recruiter') return <Dashboard />;
-        return <AppTracker />;
-      case '#resume-log': 
-        if (user?.role !== 'administrator' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_cs' && user?.role !== 'jpc_recruiter' && user?.role !== 'jpc_resume') return <Dashboard />;
-        return <ResumeLogBook />;
-      case '#interviews': 
-        if (user?.role !== 'administrator' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_cs' && user?.role !== 'jpc_recruiter' && user?.role !== 'jpc_proxy') return <Dashboard />;
-        return <InterviewSupport />;
-      default: 
-        if (user?.role === 'candidate') return <CandidateDetail />;
-        return <Dashboard />;
-    }
-  };
-
-  const isReceiptPage = currentHash.startsWith('#receipt');
-
   return (
-    <div className="min-h-screen bg-bg-primary flex">
-      {!isReceiptPage && (
-        <Sidebar 
-          currentHash={currentHash} 
-          isOpen={isSidebarOpen} 
-          setIsOpen={setIsSidebarOpen} 
-        />
-      )}
-      
-      <main className={`flex-1 flex flex-col min-h-screen ${!isReceiptPage ? 'md:ml-[260px]' : ''}`}>
-        {!isReceiptPage && (
-          <header className="h-16 border-b border-border-primary bg-bg-secondary/50 backdrop-blur-md sticky top-0 z-30 px-6 flex items-center justify-between">
-            <button 
-              className="md:hidden p-2 text-text-secondary hover:bg-bg-tertiary rounded-lg transition-colors"
-              onClick={() => setIsSidebarOpen(true)}
-            >
-              <Menu className="w-6 h-6" />
-            </button>
-            
-            <div className="flex items-center gap-4 ml-auto">
-              <NotificationList />
-              {user?.role !== 'candidate' && (
-                <button 
-                  onClick={() => setIsAddModalOpen(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-accent-blue text-white font-bold rounded-xl hover:bg-accent-blue/90 transition-all shadow-lg shadow-accent-blue/20"
-                >
-                  <Plus className="w-5 h-5" />
-                  <span className="hidden sm:inline">Add Candidate</span>
-                </button>
+    <div className="space-y-10">
+      {/* Welcome Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div>
+          <h1 className="text-3xl font-bold text-text-primary tracking-tight">Welcome back, {user?.display_name}!</h1>
+          <p className="text-text-secondary mt-1">Here's what's happening with your pipeline today.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="px-4 py-2 bg-bg-secondary border border-border-primary rounded-xl flex items-center gap-2">
+            <span className="w-2 h-2 bg-accent-green rounded-full animate-pulse" />
+            <span className="text-sm font-bold text-text-primary uppercase tracking-wider">System Live</span>
+          </div>
+
+          {/* Test Notification Button - Admin Only */}
+          {user?.role === 'administrator' && (
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={handleTestNotification}
+                disabled={testNotifLoading}
+                className="flex items-center gap-2 px-4 py-2 bg-accent-blue/10 border border-accent-blue/30 text-accent-blue text-sm font-bold rounded-xl hover:bg-accent-blue/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {testNotifLoading
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending...</>
+                  : <><BellRing className="w-4 h-4" /> Test Notification</>
+                }
+              </button>
+              {testNotifResult && (
+                <div className={`px-4 py-3 rounded-xl border text-sm font-medium max-w-sm ${
+                  testNotifResult.success
+                    ? 'bg-accent-green/10 border-accent-green/30 text-accent-green'
+                    : 'bg-accent-red/10 border-accent-red/30 text-accent-red'
+                }`}>
+                  <p className="font-bold mb-0.5">{testNotifResult.success ? 'Success' : 'Failed'}</p>
+                  <p className="text-xs opacity-80 break-all">{testNotifResult.message}</p>
+                </div>
               )}
             </div>
-          </header>
-        )}
-
-        <div className={`p-6 md:p-10 max-w-7xl mx-auto w-full flex-1 ${isReceiptPage ? 'p-0 md:p-0 max-w-none' : ''}`}>
-          {renderPage()}
+          )}
         </div>
-      </main>
+      </div>
 
-      <AddCandidateModal 
-        isOpen={isAddModalOpen} 
-        onClose={() => setIsAddModalOpen(false)}
-        onSuccess={() => {
-          window.dispatchEvent(new HashChangeEvent('hashchange'));
-        }}
-      />
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        {stats.map((stat, i) => (
+          <motion.div
+            key={stat.label}
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: i * 0.1 }}
+            className="bg-bg-secondary p-6 rounded-3xl border border-border-primary shadow-sm hover:shadow-md transition-all group"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center transition-transform group-hover:scale-110", stat.bg, stat.color)}>
+                <stat.icon className="w-6 h-6" />
+              </div>
+              <ArrowUpRight className="w-5 h-5 text-text-muted opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
+            <p className="text-sm font-bold text-text-muted uppercase tracking-widest">{stat.label}</p>
+            <h3 className="text-3xl font-bold text-text-primary mt-1">{stat.value}</h3>
+          </motion.div>
+        ))}
+      </div>
+
+      {/* Application Performance */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="bg-bg-secondary border border-border-primary rounded-[32px] p-8 shadow-sm">
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h2 className="text-2xl font-bold text-text-primary tracking-tight">Application Performance</h2>
+              <p className="text-text-secondary mt-1">Real-time tracking of job applications across the team.</p>
+            </div>
+            <div className="w-12 h-12 bg-accent-blue/10 rounded-2xl flex items-center justify-center text-accent-blue">
+              <TrendingUp className="w-6 h-6" />
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-2 gap-8">
+            <div className="space-y-1">
+              <p className="text-xs font-bold text-text-muted uppercase tracking-widest">Today</p>
+              <p className="text-4xl font-bold text-text-primary">{appStats.day}</p>
+              <div className="h-1 w-12 bg-accent-blue rounded-full mt-2" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-bold text-text-muted uppercase tracking-widest">This Week</p>
+              <p className="text-4xl font-bold text-text-primary">{appStats.week}</p>
+              <div className="h-1 w-12 bg-accent-purple rounded-full mt-2" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-bold text-text-muted uppercase tracking-widest">This Month</p>
+              <p className="text-4xl font-bold text-text-primary">{appStats.month}</p>
+              <div className="h-1 w-12 bg-accent-teal rounded-full mt-2" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-bold text-text-muted uppercase tracking-widest">Lifetime</p>
+              <p className="text-4xl font-bold text-text-primary">{appStats.lifetime}</p>
+              <div className="h-1 w-12 bg-accent-green rounded-full mt-2" />
+            </div>
+          </div>
+        </div>
+
+        {targetAlerts.length > 0 && (
+          <div className="bg-bg-secondary border border-border-primary rounded-[32px] p-8 shadow-sm">
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h2 className="text-2xl font-bold text-text-primary tracking-tight">Target Not Met</h2>
+                <p className="text-text-secondary mt-1">Candidates below daily application target (40/profile).</p>
+              </div>
+              <div className="w-12 h-12 bg-accent-red/10 rounded-2xl flex items-center justify-center text-accent-red">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+            </div>
+            
+            <div className="space-y-4 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
+              {targetAlerts.map(({ candidate, count, target }) => (
+                <div key={candidate.id} className="flex items-center justify-between p-3 bg-bg-tertiary/50 rounded-2xl border border-border-primary">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-bg-secondary flex items-center justify-center text-[10px] font-bold text-text-secondary">
+                      {candidate.full_name.split(' ').map(n => n[0]).join('')}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-text-primary">{candidate.full_name}</p>
+                      <p className="text-[10px] text-text-muted uppercase font-bold">{STAGES[candidate.current_stage].label}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className={cn("text-sm font-bold", count === 0 ? "text-accent-red" : "text-accent-amber")}>
+                      {count} / {target}
+                    </p>
+                    <div className="w-20 h-1 bg-bg-tertiary rounded-full mt-1 overflow-hidden">
+                      <div 
+                        className={cn("h-full", count === 0 ? "bg-accent-red" : "bg-accent-amber")} 
+                        style={{ width: `${(count / target) * 100}%` }} 
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Pipeline Overview */}
+        <div className="lg:col-span-2 space-y-6">
+          <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
+            <LayoutGrid className="w-5 h-5 text-accent-blue" />
+            Pipeline Overview
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {Object.entries(STAGES).filter(([key]) => key !== 'not_interested').map(([key, stage], i) => {
+              const count = candidates.filter(c => {
+                const matchesStage = c.current_stage === key;
+                if (!matchesStage) return false;
+                
+                if (user?.role === 'jpc_recruiter') {
+                  return String(c.assigned_recruiter) === String(user.id);
+                } else if (user?.role === 'jpc_lead_gen') {
+                  return String(c.lead_generated_by) === String(user.id);
+                }
+                return true;
+              }).length;
+              return (
+                <motion.a
+                  key={key}
+                  href={`#pipeline?stage=${key}`}
+                  initial={{ x: -20, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ delay: i * 0.05 }}
+                  className="bg-bg-secondary p-5 rounded-2xl border border-border-primary flex items-center justify-between hover:border-accent-blue transition-all group"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-xl bg-bg-tertiary flex items-center justify-center text-xl">
+                      {stage.icon}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-text-primary">{stage.label}</p>
+                      <p className="text-xs text-text-muted">{count} candidates</p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-text-muted group-hover:text-accent-blue transition-colors" />
+                </motion.a>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Recent Activity / Follow-ups */}
+        <div className="space-y-6">
+          {notifications.length > 0 && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-accent-red" />
+                Team Alerts
+              </h2>
+              <div className="space-y-3">
+                {notifications.filter(n => !n.read).map(n => (
+                  <div key={n.id} className="p-4 bg-accent-red/5 border border-accent-red/20 rounded-2xl relative group flex justify-between items-start">
+                    <div>
+                      <p className="text-xs text-text-primary pr-6">{n.message}</p>
+                      <p className="text-[10px] text-text-muted mt-2 font-bold uppercase">
+                        {new Date(n.created_at).toLocaleString()}
+                      </p>
+                    </div>
+                    <button 
+                      onClick={() => markNotificationAsRead(n.id)}
+                      className="opacity-0 group-hover:opacity-100 p-1 hover:bg-accent-red/10 rounded transition-opacity"
+                      title="Mark as read"
+                    >
+                      <Check className="w-4 h-4 text-accent-red" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {activeInterviews.length > 0 && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
+                <Video className="w-5 h-5 text-accent-red" />
+                Active Interviews
+              </h2>
+              <div className="bg-bg-secondary rounded-3xl border border-border-primary overflow-hidden shadow-sm">
+                <div className="divide-y divide-border-primary">
+                  {activeInterviews.slice(0, 3).map(int => {
+                    const candidate = candidates.find(c => c.id === int.candidate_id);
+                    return (
+                      <a 
+                        key={int.id} 
+                        href="#interviews"
+                        className="p-4 flex items-center gap-4 hover:bg-bg-tertiary transition-colors group"
+                      >
+                        <div className={cn(
+                          "w-10 h-10 rounded-xl flex items-center justify-center",
+                          int.status === 'live' ? "bg-accent-red/10 text-accent-red animate-pulse" : "bg-accent-blue/10 text-accent-blue"
+                        )}>
+                          <Video className="w-5 h-5" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-text-primary truncate">{candidate?.full_name || 'Candidate'}</p>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-mono text-text-muted">{candidate?.id}</span>
+                            <span className="text-[10px] text-text-muted">•</span>
+                            <p className="text-[10px] text-text-muted truncate capitalize">{int.status.replace('_', ' ')}</p>
+                          </div>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-text-muted" />
+                      </a>
+                    );
+                  })}
+                </div>
+                <div className="p-3 bg-bg-tertiary/50 border-t border-border-primary">
+                  <a href="#interviews" className="text-[10px] font-bold text-accent-blue hover:underline flex items-center justify-center gap-1 uppercase tracking-wider">
+                    View All Interviews <ArrowRight className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
+            <Clock className="w-5 h-5 text-accent-amber" />
+            Recent Updates
+          </h2>
+          
+          {pendingResumeRequests.length > 0 && (
+            <div className="space-y-4">
+              <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
+                <FileEdit className="w-5 h-5 text-accent-blue" />
+                Resume Requests
+              </h2>
+              <div className="bg-bg-secondary rounded-3xl border border-border-primary overflow-hidden shadow-sm">
+                <div className="divide-y divide-border-primary">
+                  {pendingResumeRequests.slice(0, 3).map(req => (
+                    <a 
+                      key={req.id} 
+                      href="#resume-log"
+                      className="p-4 flex items-center gap-4 hover:bg-bg-tertiary transition-colors group"
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-accent-blue/10 flex items-center justify-center text-accent-blue">
+                        <FileEdit className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-text-primary truncate">Resume Change Needed</p>
+                        <p className="text-xs text-text-muted truncate">{req.details}</p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-text-muted" />
+                    </a>
+                  ))}
+                </div>
+                <div className="p-3 bg-bg-tertiary/50 border-t border-border-primary">
+                  <a href="#resume-log" className="text-[10px] font-bold text-accent-blue hover:underline flex items-center justify-center gap-1 uppercase tracking-wider">
+                    View All Requests <ArrowRight className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="bg-bg-secondary rounded-3xl border border-border-primary overflow-hidden shadow-sm">
+            <div className="divide-y divide-border-primary">
+              {recentCandidates.length > 0 ? recentCandidates.map(candidate => (
+                <a 
+                  key={candidate.id} 
+                  href={`#candidate?id=${candidate.id}`}
+                  className="p-4 flex items-center gap-4 hover:bg-bg-tertiary transition-colors group"
+                >
+                  <div className="w-10 h-10 rounded-full bg-bg-tertiary flex items-center justify-center text-text-secondary font-bold text-xs">
+                    {candidate.full_name.split(' ').map(n => n[0]).join('')}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-bold text-text-primary truncate">{candidate.full_name}</p>
+                      <span className="text-[10px] font-mono text-text-muted">{candidate.id}</span>
+                    </div>
+                    <p className="text-xs text-text-muted truncate">
+                      Moved to <span className="text-accent-blue font-medium">{STAGES[candidate.current_stage].label}</span>
+                    </p>
+                  </div>
+                  <p className="text-[10px] text-text-muted font-bold uppercase">
+                    {new Date(candidate.updated_at).toLocaleDateString()}
+                  </p>
+                </a>
+              )) : (
+                <div className="p-8 text-center">
+                  <AlertCircle className="w-8 h-8 text-text-muted mx-auto mb-2" />
+                  <p className="text-sm text-text-muted">No recent activity</p>
+                </div>
+              )}
+            </div>
+            <div className="p-4 bg-bg-tertiary/50 border-t border-border-primary">
+              <a href="#candidates" className="text-xs font-bold text-accent-blue hover:underline flex items-center justify-center gap-2">
+                View All Candidates <ArrowRight className="w-3 h-3" />
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
-
-export default function App() {
-  return (
-    <ThemeProvider>
-      <AuthProvider>
-        <ToastProvider>
-          <NotificationProvider>
-          <AppContent />
-          </NotificationProvider>
-        </ToastProvider>
-      </AuthProvider>
-    </ThemeProvider>
-  );
-}
