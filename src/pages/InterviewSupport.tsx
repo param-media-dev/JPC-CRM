@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { subscribeToCollection, generateId, addInterviewRequest, updateInterviewRequest, logActivity } from '../services/storage';
+import { subscribeToCollection, generateId, addInterviewRequest, updateInterviewRequest, logActivity, addNotification } from '../services/storage';
 import { InterviewRequest, Candidate, User } from '../types';
 import { 
   Calendar, 
@@ -21,8 +21,6 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { useToast } from '../contexts/ToastContext';
-import { db } from '../firebase';
-import { collection, addDoc } from 'firebase/firestore';
 
 export const InterviewSupport: React.FC = () => {
   const { user, isAuthReady } = useAuth();
@@ -183,13 +181,13 @@ export const InterviewSupport: React.FC = () => {
 
   const sendNotification = async (recipientId: string, message: string, type: 'system_alert') => {
     try {
-      await addDoc(collection(db, 'jpc_notifications'), {
-        recipient_id: recipientId,
-        sender_id: user?.id || null,
+      // FIX: Use addNotification service so the document gets a proper 'id' field
+      // and recipient_id is always a String for consistent Firestore query matching
+      await addNotification({
+        recipient_id: String(recipientId),
+        sender_id: user?.id ? String(user.id) : null,
         type,
         message,
-        read: false,
-        created_at: new Date().toISOString()
       });
     } catch (error) {
       console.error('Notification error:', error);
