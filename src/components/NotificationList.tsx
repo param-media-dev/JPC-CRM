@@ -63,10 +63,10 @@ export const NotificationList: React.FC = () => {
         )}
       </button>
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 bg-white border border-border-primary rounded-xl shadow-lg z-50">
+        <div className="absolute right-0 mt-2 w-80 bg-bg-secondary border border-border-primary rounded-xl shadow-lg z-50">
           <div className="p-4 border-b border-border-primary flex justify-between items-center">
             <h3 className="font-bold text-text-primary">Notifications</h3>
-            <button onClick={() => setIsOpen(false)}><X className="w-4 h-4" /></button>
+            <button onClick={() => setIsOpen(false)} className="text-text-secondary hover:text-text-primary transition-colors"><X className="w-4 h-4" /></button>
           </div>
           <div className="max-h-96 overflow-y-auto">
             {notifications.length === 0 ? (
