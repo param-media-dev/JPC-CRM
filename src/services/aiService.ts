@@ -1,3 +1,5 @@
+import { GoogleGenAI, Type } from '@google/genai';
+
 export interface ParsedCandidate {
   full_name: string;
   phone: string;
@@ -18,21 +20,56 @@ export interface ParsedCandidate {
 
 export async function parseResume(fileBase64: string, mimeType: string): Promise<ParsedCandidate | null> {
   try {
-    const response = await fetch('/api/parse-resume', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              data: fileBase64,
+              mimeType: mimeType,
+            },
+          },
+          {
+            text: "Extract candidate information from this resume. Return the data in JSON format following the provided schema. If a field is not found, return an empty string.",
+          },
+        ],
       },
-      body: JSON.stringify({ fileBase64, mimeType }),
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            full_name: { type: Type.STRING },
+            phone: { type: Type.STRING },
+            email: { type: Type.STRING },
+            job_interest: { type: Type.STRING },
+            location: { type: Type.STRING },
+            education: { type: Type.STRING },
+            degree: { type: Type.STRING },
+            university: { type: Type.STRING },
+            graduation_year: { type: Type.STRING },
+            experience_years: { type: Type.STRING },
+            current_company: { type: Type.STRING },
+            current_designation: { type: Type.STRING },
+            skills: { type: Type.STRING },
+            linkedin_url: { type: Type.STRING },
+            notes: { type: Type.STRING },
+          },
+          required: ["full_name", "phone", "email"],
+        },
+      },
     });
 
-    if (!response.ok) {
-      throw new Error(`Failed to parse resume: ${response.statusText}`);
+    if (response.text) {
+      return JSON.parse(response.text.trim()) as ParsedCandidate;
+    } else {
+      throw new Error('No response from AI');
     }
-
-    return await response.json() as ParsedCandidate;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error parsing resume:", error);
-    return null;
+    throw new Error(`Failed to parse resume: ${error.message || error}`);
   }
 }
