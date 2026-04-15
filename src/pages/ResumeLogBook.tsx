@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { subscribeToCollection, generateId } from '../services/storage';
-import { notifyResumeRequestCreated, notifyResumeRequestUpdated } from '../services/notificationService';
+import { subscribeToCollection, generateId, addNotification } from '../services/storage';
 import { ResumeChangeRequest, Candidate, User } from '../types';
 import { 
   FileEdit, 
@@ -258,12 +257,12 @@ export const ResumeLogBook: React.FC = () => {
       
       const request = requests.find(r => r.id === requestId);
       if (request) {
-        await notifyResumeRequestUpdated(
-          candidates.find(c => c.id === request.candidate_id)?.full_name || 'Unknown',
-          request.recruiter_id,
-          newStatus,
-          user?.id || null
-        );
+        await addNotification({
+          recipient_id: request.recruiter_id,
+          sender_id: user?.id || null,
+          type: 'resume_request',
+          message: `Resume request for candidate ${candidates.find(c => c.id === request.candidate_id)?.full_name || 'Unknown'} has been updated to ${newStatus.replace('_', ' ')}`
+        });
       }
 
       showToast(`Request updated to ${newStatus.replace('_', ' ')}`, 'success');

@@ -414,7 +414,15 @@ export const CandidateDetail: React.FC = () => {
     await saveCandidate({ ...candidate, ...personalForm } as Candidate, user?.id || null);
     
     if (oldNotes !== newNotes) {
-      await notifyNotesUpdated(candidate, user?.id || null);
+      const teamMembers = [candidate.assigned_sales, candidate.assigned_cs, candidate.assigned_recruiter].filter(Boolean);
+      for (const memberId of teamMembers) {
+        await addNotification({
+          recipient_id: memberId as string,
+          sender_id: user?.id || null,
+          type: 'system_alert',
+          message: `Notes for candidate ${candidate.full_name} have been updated.`
+        });
+      }
     }
 
     await logActivity(candidate.id, 'Updated personal info', 'Personal information details were updated.', user?.id || null);
@@ -425,7 +433,15 @@ export const CandidateDetail: React.FC = () => {
   const handleSaveEducation = async () => {
     await saveCandidate({ ...candidate, ...educationForm } as Candidate, user?.id || null);
     
-    await notifyInfoUpdated(candidate, 'Education/Experience', user?.id || null);
+    const teamMembers = [candidate.assigned_sales, candidate.assigned_cs, candidate.assigned_recruiter].filter(Boolean);
+    for (const memberId of teamMembers) {
+      await addNotification({
+        recipient_id: memberId as string,
+        sender_id: user?.id || null,
+        type: 'system_alert',
+        message: `Education/Experience for candidate ${candidate.full_name} has been updated.`
+      });
+    }
 
     await logActivity(candidate.id, 'Updated education info', 'Education and experience details were updated.', user?.id || null);
     setIsEditingEducation(false);
@@ -435,24 +451,18 @@ export const CandidateDetail: React.FC = () => {
   const handleSavePackage = async () => {
     await saveCandidate({ ...candidate, ...packageForm } as Candidate, user?.id || null);
     
-    // Notify each newly assigned user
-    const assignmentFields: { field: string; label: string }[] = [
-      { field: 'assigned_sales',            label: 'Sales'             },
-      { field: 'assigned_cs',               label: 'Customer Success'  },
-      { field: 'assigned_resume',           label: 'Resume Team'       },
-      { field: 'assigned_marketing_leader', label: 'Marketing Leader'  },
-      { field: 'assigned_recruiter',        label: 'Recruiter'         },
-      { field: 'assigned_marketing',        label: 'Marketing'         },
-    ];
-    for (const { field, label } of assignmentFields) {
-      const newVal = packageForm[field as keyof Candidate];
-      const oldVal = candidate[field as keyof Candidate];
-      if (newVal && String(newVal) !== String(oldVal || '')) {
-        await notifyAssignment(candidate, String(newVal), label, user?.id || null);
+    // Check for assignments
+    const assignmentFields = ['assigned_cs', 'assigned_resume', 'assigned_marketing_leader', 'assigned_recruiter', 'assigned_marketing', 'assigned_sales'];
+    for (const field of assignmentFields) {
+      if (packageForm[field as keyof Candidate] !== candidate[field as keyof Candidate] && packageForm[field as keyof Candidate]) {
+        await addNotification({
+          recipient_id: packageForm[field as keyof Candidate] as string,
+          sender_id: user?.id || null,
+          type: 'system_alert',
+          message: `You have been assigned to candidate ${candidate.full_name}`
+        });
       }
     }
-    // Also notify the whole existing team about package update
-    await notifyInfoUpdated(candidate, 'Package/Team Assignment', user?.id || null);
 
     await logActivity(candidate.id, 'Updated package info', 'Package and team assignment details were updated.', user?.id || null);
     setIsEditingPackage(false);
@@ -471,11 +481,14 @@ export const CandidateDetail: React.FC = () => {
     
     await saveCandidate(updated, user?.id || null);
     
-    // Notify if marked not interested
-    if (newStage === 'not_interested') {
-      await notifyNotInterested(candidate, user?.id || null, allUsers);
-    } else {
-      await notifyStageMove(candidate, oldStageLabel, newStageLabel, user?.id || null, allUsers);
+    const teamMembers = [candidate.assigned_sales, candidate.assigned_cs, candidate.assigned_recruiter].filter(Boolean);
+    for (const memberId of teamMembers) {
+      await addNotification({
+        recipient_id: memberId as string,
+        sender_id: user?.id || null,
+        type: 'system_alert',
+        message: `Candidate ${candidate.full_name} moved from ${oldStageLabel} to ${newStageLabel}.`
+      });
     }
 
     await logActivity(candidate.id, 'Stage moved', `Moved from ${oldStageLabel} to ${newStageLabel}`, user?.id || null);

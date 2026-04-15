@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Modal } from './Modal';
 import { LEAD_SOURCES } from '../constants';
 import { getUsers, generateId, saveCandidate, seedQCChecklist, logActivity } from '../services/storage';
-import { notifyNewCandidate, notifyLeadAssignedToSales } from '../services/notificationService';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { Candidate, User } from '../types';

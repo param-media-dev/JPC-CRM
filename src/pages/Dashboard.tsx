@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { subscribeToCollection, subscribeToQuery, markNotificationAsRead, addNotification } from '../services/storage';
+import { subscribeToCollection, subscribeToQuery, markNotificationAsRead } from '../services/storage';
 import { STAGES } from '../constants';
-import { Users, CheckCircle2, Clock, UserX, ArrowRight, LayoutGrid, Phone, Calendar, ArrowUpRight, AlertCircle, ChevronRight, FileEdit, Video, TrendingUp, Check, BellRing, Loader2 } from 'lucide-react';
+import { Users, CheckCircle2, Clock, UserX, ArrowRight, LayoutGrid, Phone, Calendar, ArrowUpRight, AlertCircle, ChevronRight, FileEdit, Video, TrendingUp, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { Candidate, FollowUp, Notification, ResumeChangeRequest, InterviewRequest, Application } from '../types';
@@ -18,32 +18,6 @@ export const Dashboard: React.FC = () => {
   const [interviews, setInterviews] = useState<InterviewRequest[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-
-  // Test notification state (admin only)
-  const [testNotifLoading, setTestNotifLoading] = useState(false);
-  const [testNotifResult, setTestNotifResult] = useState<{ success: boolean; message: string } | null>(null);
-
-  const handleTestNotification = async () => {
-    if (!user) return;
-    setTestNotifLoading(true);
-    setTestNotifResult(null);
-    try {
-      await addNotification({
-        recipient_id: String(user.id),
-        sender_id: String(user.id),
-        type: 'system_alert',
-        message: `Test notification sent to ${user.display_name} at ${new Date().toLocaleTimeString()}`,
-      });
-      setTestNotifResult({ success: true, message: 'Notification sent! Check the bell icon above.' });
-    } catch (err: any) {
-      let errorMsg = String(err);
-      try { errorMsg = JSON.parse(err?.message)?.error || err?.message || String(err); } catch {}
-      setTestNotifResult({ success: false, message: 'Error: ' + errorMsg });
-    } finally {
-      setTestNotifLoading(false);
-      setTimeout(() => setTestNotifResult(null), 8000);
-    }
-  };
 
   useEffect(() => {
     if (!isAuthReady) return;
@@ -61,8 +35,7 @@ export const Dashboard: React.FC = () => {
     if (user) {
       const q = query(
         collection(db, 'jpc_notifications'),
-        where('recipient_id', '==', String(user.id)),
-        where('read', '==', false)
+        where('recipient_id', '==', String(user.id))
       );
       unsubNotifications = subscribeToQuery<Notification>(q, setNotifications, 'jpc_notifications');
     }
@@ -232,32 +205,6 @@ export const Dashboard: React.FC = () => {
             <span className="w-2 h-2 bg-accent-green rounded-full animate-pulse" />
             <span className="text-sm font-bold text-text-primary uppercase tracking-wider">System Live</span>
           </div>
-
-          {/* Test Notification Button - Admin Only */}
-          {user?.role === 'administrator' && (
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={handleTestNotification}
-                disabled={testNotifLoading}
-                className="flex items-center gap-2 px-4 py-2 bg-accent-blue/10 border border-accent-blue/30 text-accent-blue text-sm font-bold rounded-xl hover:bg-accent-blue/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {testNotifLoading
-                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending...</>
-                  : <><BellRing className="w-4 h-4" /> Test Notification</>
-                }
-              </button>
-              {testNotifResult && (
-                <div className={`px-4 py-3 rounded-xl border text-sm font-medium max-w-sm ${
-                  testNotifResult.success
-                    ? 'bg-accent-green/10 border-accent-green/30 text-accent-green'
-                    : 'bg-accent-red/10 border-accent-red/30 text-accent-red'
-                }`}>
-                  <p className="font-bold mb-0.5">{testNotifResult.success ? 'Success' : 'Failed'}</p>
-                  <p className="text-xs opacity-80 break-all">{testNotifResult.message}</p>
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </div>
 

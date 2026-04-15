@@ -18,7 +18,6 @@ import { ResumeLogBook } from './pages/ResumeLogBook';
 import { InterviewSupport } from './pages/InterviewSupport';
 import { AddCandidateModal } from './components/AddCandidateModal';
 import { NotificationList } from './components/NotificationList';
-import { NotificationProvider } from './contexts/NotificationContext';
 import { seedData } from './services/seeding';
 import { migrateAllChecklists, testConnection } from './services/storage';
 import { Plus, Menu } from 'lucide-react';
@@ -180,9 +179,7 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <ToastProvider>
-          <NotificationProvider>
           <AppContent />
-          </NotificationProvider>
         </ToastProvider>
       </AuthProvider>
     </ThemeProvider>
