@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { subscribeToCollection, generateId, addInterviewRequest, updateInterviewRequest, logActivity, addNotification } from '../services/storage';
+import { subscribeToCollection, generateId, addInterviewRequest, updateInterviewRequest, logActivity } from '../services/storage';
+import {
+  notifyInterviewRequestCreated,
+  notifyInterviewScheduled,
+  notifyInterviewFeedback,
+  notifyInterviewResult,
+} from '../services/notificationService';
 import { InterviewRequest, Candidate, User } from '../types';
 import { 
   Calendar, 
@@ -179,20 +185,7 @@ export const InterviewSupport: React.FC = () => {
     }
   };
 
-  const sendNotification = async (recipientId: string, message: string, type: 'system_alert') => {
-    try {
-      // FIX: Use addNotification service so the document gets a proper 'id' field
-      // and recipient_id is always a String for consistent Firestore query matching
-      await addNotification({
-        recipient_id: String(recipientId),
-        sender_id: user?.id ? String(user.id) : null,
-        type,
-        message,
-      });
-    } catch (error) {
-      console.error('Notification error:', error);
-    }
-  };
+
 
   const handleAction = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -218,9 +211,7 @@ export const InterviewSupport: React.FC = () => {
             proxy_id: String(user?.id)
           });
           await logActivity(interview.candidate_id, 'Interview Scheduled', `Interview scheduled for ${new Date(actionData.scheduled_at).toLocaleString()}`, user?.id || null);
-          
-          // Notify Candidate and CS
-          await sendNotification(interview.cs_id, `Interview scheduled for ${candidate?.full_name} at ${new Date(actionData.scheduled_at).toLocaleString()}`, 'system_alert');
+          if (candidate) await notifyInterviewScheduled(candidate, interview, actionData.scheduled_at, user?.id || null, team);
           break;
 
         case 'start_live':
@@ -240,6 +231,7 @@ export const InterviewSupport: React.FC = () => {
             feedback: actionData.feedback
           });
           await logActivity(interview.candidate_id, 'Interview Feedback Shared', 'Proxy team shared post-interview feedback.', user?.id || null);
+          if (candidate) await notifyInterviewFeedback(candidate, interview, user?.id || null);
           break;
 
         case 'update_result':
@@ -252,7 +244,8 @@ export const InterviewSupport: React.FC = () => {
             result: actionData.result
           });
           await logActivity(interview.candidate_id, 'Interview Result Updated', `Recruiter updated result: ${actionData.result.replace('_', ' ')}`, user?.id || null);
-          
+          if (candidate) await notifyInterviewResult(candidate, interview, actionData.result, user?.id || null, team);
+
           if (actionData.result === 'next_round') {
             showToast('Candidate moved to next round. Flow will repeat.', 'success');
           }
