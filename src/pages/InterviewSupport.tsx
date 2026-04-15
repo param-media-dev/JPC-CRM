@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { subscribeToCollection, generateId, addInterviewRequest, updateInterviewRequest, logActivity } from '../services/storage';
+import { subscribeToCollection, generateId, addInterviewRequest, updateInterviewRequest, logActivity, addNotification } from '../services/storage';
 import { InterviewRequest, Candidate, User } from '../types';
 import { 
   Calendar, 
@@ -183,13 +183,11 @@ export const InterviewSupport: React.FC = () => {
 
   const sendNotification = async (recipientId: string, message: string, type: 'system_alert') => {
     try {
-      await addDoc(collection(db, 'jpc_notifications'), {
+      await addNotification({
         recipient_id: recipientId,
         sender_id: user?.id || null,
         type,
-        message,
-        read: false,
-        created_at: new Date().toISOString()
+        message
       });
     } catch (error) {
       console.error('Notification error:', error);

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Modal } from './Modal';
 import { LEAD_SOURCES } from '../constants';
-import { getUsers, generateId, saveCandidate, seedQCChecklist, logActivity } from '../services/storage';
+import { getUsers, generateId, saveCandidate, seedQCChecklist, logActivity, addNotification } from '../services/storage';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { Candidate, User } from '../types';
@@ -195,6 +195,15 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
     seedQCChecklist(id);
     logActivity(id, 'Candidate created', `Candidate ${formData.full_name} added to the system.`, user?.id || null);
     
+    if (formData.assigned_sales) {
+      addNotification({
+        recipient_id: formData.assigned_sales,
+        sender_id: user?.id || null,
+        type: 'system_alert',
+        message: `You have been assigned to a new candidate: ${formData.full_name}`
+      });
+    }
+
     showToast('Candidate added successfully', 'success');
     onSuccess();
     onClose();
