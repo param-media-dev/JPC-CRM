@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { subscribeToCollection, generateId, addNotification } from '../services/storage';
+import { subscribeToCollection, generateId } from '../services/storage';
+import { notifyResumeRequestCreated, notifyResumeRequestUpdated } from '../services/notificationService';
 import { ResumeChangeRequest, Candidate, User } from '../types';
 import { 
   FileEdit, 
@@ -257,13 +258,12 @@ export const ResumeLogBook: React.FC = () => {
       
       const request = requests.find(r => r.id === requestId);
       if (request) {
-        // FIX: Wrap recipient_id and sender_id in String() for consistent Firestore query matching
-        await addNotification({
-          recipient_id: String(request.recruiter_id),
-          sender_id: user?.id ? String(user.id) : null,
-          type: 'resume_request',
-          message: `Resume request for candidate ${candidates.find(c => c.id === request.candidate_id)?.full_name || 'Unknown'} has been updated to ${newStatus.replace('_', ' ')}`
-        });
+        await notifyResumeRequestUpdated(
+          candidates.find(c => c.id === request.candidate_id)?.full_name || 'Unknown',
+          request.recruiter_id,
+          newStatus,
+          user?.id || null
+        );
       }
 
       showToast(`Request updated to ${newStatus.replace('_', ' ')}`, 'success');
