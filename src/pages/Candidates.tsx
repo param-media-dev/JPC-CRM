@@ -2,18 +2,25 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { subscribeToCollection } from '../services/storage';
 import { STAGES } from '../constants';
-import { Search, Filter, X, Package, Phone, Mail, MapPin, Calendar, Users, ChevronRight, MoreVertical, ShieldCheck } from 'lucide-react';
+import { Search, Filter, X, Package, Phone, Mail, MapPin, Calendar, Users, ChevronRight, MoreVertical, ShieldCheck, Plus, Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { Candidate, Stage, User } from '../types';
+import { Candidate, Stage, User, Application } from '../types';
+import { CandidateSheet } from '../components/CandidateSheet';
+import { TrackJobSheet } from '../components/TrackJobSheet';
 
 export const Candidates: React.FC = () => {
   const { user, isAuthReady } = useAuth();
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [stageFilter, setStageFilter] = useState('');
+  const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
+  const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [trackingCandidate, setTrackingCandidate] = useState<Candidate | null>(null);
+  const [isTrackSheetOpen, setIsTrackSheetOpen] = useState(false);
   
   useEffect(() => {
     if (!isAuthReady) return;
@@ -26,9 +33,14 @@ export const Candidates: React.FC = () => {
       setAllUsers(data);
     });
 
+    const unsubApps = subscribeToCollection<Application>('jpc_applications', (data) => {
+      setApplications(data);
+    });
+
     return () => {
       unsub();
       unsubUsers();
+      unsubApps();
     };
   }, [isAuthReady]);
 
@@ -123,7 +135,10 @@ export const Candidates: React.FC = () => {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.03 }}
                     className="hover:bg-bg-tertiary/30 transition-colors group cursor-pointer"
-                    onClick={() => window.location.hash = `#candidate?id=${candidate.id}`}
+                    onClick={() => {
+                      setSelectedCandidate(candidate);
+                      setIsSheetOpen(true);
+                    }}
                   >
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-4">
@@ -187,9 +202,24 @@ export const Candidates: React.FC = () => {
                       </p>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button className="p-2 text-text-muted hover:text-accent-blue transition-colors">
-                        <ChevronRight className="w-5 h-5" />
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        {(user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_recruiter') && (
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setTrackingCandidate(candidate);
+                              setIsTrackSheetOpen(true);
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-accent-blue/5 text-accent-blue hover:bg-accent-blue text-[10px] font-bold uppercase tracking-wider rounded-lg transition-all hover:text-white"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            Track Job
+                          </button>
+                        )}
+                        <button className="p-2 text-text-muted hover:text-accent-blue transition-colors">
+                          <ChevronRight className="w-5 h-5" />
+                        </button>
+                      </div>
                     </td>
                   </motion.tr>
                 ))}
@@ -205,6 +235,23 @@ export const Candidates: React.FC = () => {
           )}
         </div>
       </div>
+      <CandidateSheet 
+        candidate={selectedCandidate}
+        isOpen={isSheetOpen}
+        onClose={() => {
+          setIsSheetOpen(false);
+          setSelectedCandidate(null);
+        }}
+      />
+      <TrackJobSheet 
+        candidate={trackingCandidate}
+        isOpen={isTrackSheetOpen}
+        onClose={() => {
+          setIsTrackSheetOpen(false);
+          setTrackingCandidate(null);
+        }}
+        applications={applications}
+      />
     </div>
   );
 };

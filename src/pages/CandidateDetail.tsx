@@ -15,6 +15,7 @@ import {
   getUserById,
   now
 } from '../services/storage';
+import { uploadFile } from '../services/fileService';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { STAGES, TRANSITIONS, LEAD_SOURCES } from '../constants';
@@ -41,6 +42,8 @@ import {
   AlertCircle,
   CheckCircle2,
   FileText,
+  Download,
+  Upload,
   RotateCcw,
   User as UserIcon,
   ExternalLink,
@@ -51,7 +54,8 @@ import {
   Share2,
   Key,
   Copy,
-  Check
+  Check,
+  Image
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -70,7 +74,13 @@ export const CandidateDetail: React.FC = () => {
 
   const isCandidate = user?.role === 'candidate' || user?.role === 'jpc_candidate';
   const isLeadGen = user?.role === 'jpc_lead_gen';
-  const canEdit = !isCandidate && !isLeadGen;
+  const isSalesperson = user?.role === 'jpc_sales';
+  const canEdit = !isCandidate && !isLeadGen && !isSalesperson;
+  const canEditResume = !isCandidate && !isSalesperson;
+  const canEditPackage = !isCandidate;
+  const canManagePayments = !isCandidate && !isLeadGen;
+  const canManageFollowUps = !isCandidate && !isLeadGen;
+  const canManageRemarks = !isCandidate && !isLeadGen;
 
   const [candidate, setCandidate] = useState<Candidate | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -176,12 +186,14 @@ export const CandidateDetail: React.FC = () => {
   const [isEditingPersonal, setIsEditingPersonal] = useState(false);
   const [isEditingEducation, setIsEditingEducation] = useState(false);
   const [isEditingPackage, setIsEditingPackage] = useState(false);
+  const [isEditingRemarks, setIsEditingRemarks] = useState(false);
   const [isGeneratingAccess, setIsGeneratingAccess] = useState(false);
   const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
   
   const [personalForm, setPersonalForm] = useState<Partial<Candidate>>({});
   const [educationForm, setEducationForm] = useState<Partial<Candidate>>({});
   const [packageForm, setPackageForm] = useState<Partial<Candidate>>({});
+  const [remarksForm, setRemarksForm] = useState('');
 
   const filteredRecruiters = useMemo(() => {
     if (!packageForm.assigned_marketing_leader) return [];
@@ -211,11 +223,12 @@ export const CandidateDetail: React.FC = () => {
       setPersonalForm({ ...candidate });
       setEducationForm({ ...candidate });
       setPackageForm({ ...candidate });
+      setRemarksForm(candidate.remarks || '');
     }
   }, [candidate]);
 
   useEffect(() => {
-    if (user?.role === 'administrator' && checklist.length > 0 && (checklist.length !== 8 || !checklist.some(item => item.item_label === 'Candidate indidity Verification'))) {
+    if ((user?.role === 'administrator' || user?.role === 'jpc_sysadmin') && checklist.length > 0 && (checklist.length !== 8 || !checklist.some(item => item.item_label === 'Candidate indidity Verification'))) {
       resetQCChecklist(id!);
     }
   }, [checklist, id, user]);
@@ -246,7 +259,7 @@ export const CandidateDetail: React.FC = () => {
     const appLogs = applications.map(app => ({
       id: app.id,
       action: 'Job Application',
-      details: `Applied to ${app.company_name}.`,
+      details: `Applied via Link: ${app.job_link}.`,
       user_id: app.recruiter_id,
       created_at: app.created_at,
       type: 'application'
@@ -467,6 +480,67 @@ export const CandidateDetail: React.FC = () => {
     await logActivity(candidate.id, 'Updated package info', 'Package and team assignment details were updated.', user?.id || null);
     setIsEditingPackage(false);
     showToast('Package info updated', 'success');
+  };
+
+  const handleSaveRemarks = async () => {
+    await saveCandidate({ ...candidate, remarks: remarksForm } as Candidate, user?.id || null);
+    await logActivity(candidate.id, 'Updated remarks', 'Candidate remarks were updated.', user?.id || null);
+    setIsEditingRemarks(false);
+    showToast('Remarks updated', 'success');
+  };
+
+  const handlePaymentProofUpload = async (payment: Payment, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      showToast('Uploading proof...', 'info');
+      const url = await uploadFile(file);
+      const updated = {
+        ...payment,
+        proof_url: url,
+        proof_filename: file.name
+      };
+      await updatePayment(updated);
+      await logActivity(candidate!.id, 'Payment proof uploaded', `Proof uploaded for Part ${payment.part_number}`, user?.id || null);
+      showToast('Payment proof uploaded', 'success');
+    } catch (error) {
+      showToast('Failed to upload proof', 'error');
+    }
+  };
+
+  const handleDownloadResume = () => {
+    const resumeUrl = candidate?.resume_url || candidate?.resume_base64;
+    if (!resumeUrl) {
+      showToast('No resume available for download', 'error');
+      return;
+    }
+    const link = document.createElement('a');
+    link.href = resumeUrl;
+    link.download = candidate.resume_filename || 'resume.pdf';
+    link.target = "_blank";
+    link.click();
+  };
+
+  const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !candidate) return;
+
+    try {
+      showToast('Uploading resume...', 'info');
+      const url = await uploadFile(file);
+      const updated: Candidate = {
+        ...candidate,
+        resume_url: url,
+        resume_filename: file.name,
+        updated_at: new Date().toISOString()
+      };
+      await saveCandidate(updated, user?.id || null);
+      await logActivity(candidate.id, 'Resume updated', `Resume updated to ${file.name}`, user?.id || null);
+      showToast('Resume updated successfully', 'success');
+    } catch (error) {
+      showToast('Failed to upload resume', 'error');
+    }
   };
 
   const handleStageMove = async (newStage: Stage) => {
@@ -723,7 +797,7 @@ export const CandidateDetail: React.FC = () => {
       )}
 
       {/* Stage Move Bar */}
-      {canEdit && (
+      {(canEdit || isSalesperson) && (
         <div className="bg-bg-secondary border border-border-primary rounded-2xl p-4 flex flex-wrap items-center gap-3">
           <span className="text-xs font-bold text-text-muted uppercase tracking-widest mr-2">Move to Stage:</span>
           {TRANSITIONS[candidate.current_stage].map(stageKey => (
@@ -750,8 +824,98 @@ export const CandidateDetail: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* LEFT COLUMN */}
         <div className="lg:col-span-7 space-y-8">
-          {/* Personal Info */}
+          {/* Resume Section */}
           <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
+            <div className="px-6 py-4 border-b border-border-primary flex items-center justify-between">
+              <h3 className="font-bold text-text-primary flex items-center gap-2">
+                <FileText className="w-5 h-5 text-accent-purple" />
+                Candidate Resume
+              </h3>
+              <div className="flex items-center gap-2">
+                {candidate.resume_url || candidate.resume_base64 ? (
+                  <button 
+                    onClick={handleDownloadResume}
+                    className="flex items-center gap-2 px-4 py-2 bg-accent-purple/10 text-accent-purple font-bold rounded-xl hover:bg-accent-purple hover:text-white transition-all text-xs"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download Resume
+                  </button>
+                ) : null}
+                {(canEditResume || isSalesperson) && (
+                  <label className="flex items-center gap-2 px-4 py-2 bg-bg-tertiary border border-border-primary text-text-primary font-bold rounded-xl hover:border-accent-purple hover:text-accent-purple transition-all text-xs cursor-pointer">
+                    <Upload className="w-4 h-4" />
+                    {candidate.resume_url || candidate.resume_base64 ? 'Update Resume' : 'Upload Resume'}
+                    <input type="file" className="hidden" accept=".pdf,.doc,.docx" onChange={handleResumeUpload} />
+                  </label>
+                )}
+              </div>
+            </div>
+            <div className="p-6">
+              {candidate.resume_url || candidate.resume_base64 ? (
+                <div className="flex items-center gap-4 p-4 bg-bg-tertiary rounded-2xl border border-border-primary">
+                  <div className="w-12 h-12 bg-accent-purple/10 rounded-xl flex items-center justify-center text-accent-purple">
+                    <FileText className="w-6 h-6" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-text-primary truncate">{candidate.resume_filename || 'resume.pdf'}</p>
+                    <p className="text-xs text-text-muted font-bold uppercase">Uploaded on {new Date(candidate.updated_at).toLocaleDateString()}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={handleDownloadResume}
+                      className="p-2 text-text-secondary hover:text-accent-purple hover:bg-accent-purple/10 rounded-lg transition-all"
+                      title="Download"
+                    >
+                      <Download className="w-4 h-4" />
+                    </button>
+                    {(candidate.resume_url || candidate.resume_base64) && (
+                      <a 
+                        href={candidate.resume_url || candidate.resume_base64 || '#'} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="p-2 text-text-secondary hover:text-accent-blue hover:bg-accent-blue/10 rounded-lg transition-all"
+                        title="View"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8 border-2 border-dashed border-border-primary rounded-2xl">
+                  <FileText className="w-12 h-12 text-text-muted mx-auto mb-2" />
+                  <p className="text-sm text-text-secondary">No resume uploaded yet</p>
+                </div>
+              )}
+            </div>
+            {resumeRequests.filter(r => r.status === 'completed' && (r.resume_url || r.resume_base64)).length > 0 && (
+              <div className="px-6 py-4 bg-bg-tertiary/30 border-t border-border-primary">
+                <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-3">Resume History</p>
+                <div className="space-y-2">
+                  {resumeRequests.filter(r => r.status === 'completed' && (r.resume_url || r.resume_base64)).map((req, idx) => (
+                    <div key={req.id} className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <FileText className="w-3 h-3 text-text-muted" />
+                        <span className="text-text-secondary">Version {idx + 1} ({new Date(req.updated_at).toLocaleDateString()})</span>
+                      </div>
+                      <a 
+                        href={req.resume_url || req.resume_base64!}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-accent-purple hover:underline font-medium"
+                      >
+                        View / Download
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* Personal Info */}
+          {!isSalesperson && (
+            <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
             <div className="px-6 py-4 border-b border-border-primary flex items-center justify-between">
               <h3 className="font-bold text-text-primary flex items-center gap-2">
                 <UserIcon className="w-5 h-5 text-accent-blue" />
@@ -830,9 +994,11 @@ export const CandidateDetail: React.FC = () => {
               )}
             </div>
           </section>
+          )}
 
           {/* Education & Experience */}
-          <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
+          {!isSalesperson && (
+            <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
             <div className="px-6 py-4 border-b border-border-primary flex items-center justify-between">
               <h3 className="font-bold text-text-primary flex items-center gap-2">
                 <GraduationCap className="w-5 h-5 text-accent-purple" />
@@ -867,12 +1033,8 @@ export const CandidateDetail: React.FC = () => {
                     <input type="text" value={educationForm.graduation_year || ''} onChange={e => setEducationForm({...educationForm, graduation_year: e.target.value})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm" />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-text-muted uppercase">Experience Years</label>
+                    <label className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Experience Years</label>
                     <input type="text" value={educationForm.experience_years || ''} onChange={e => setEducationForm({...educationForm, experience_years: e.target.value})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-text-muted uppercase">Current Company</label>
-                    <input type="text" value={educationForm.current_company || ''} onChange={e => setEducationForm({...educationForm, current_company: e.target.value})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm" />
                   </div>
                   <div className="space-y-1 md:col-span-2">
                     <label className="text-[10px] font-bold text-text-muted uppercase">Skills</label>
@@ -893,10 +1055,6 @@ export const CandidateDetail: React.FC = () => {
                     <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Experience</p>
                     <p className="text-text-primary font-medium">{candidate.experience_years ? `${candidate.experience_years} Years` : 'Fresher'}</p>
                   </div>
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Current Company</p>
-                    <p className="text-text-primary font-medium">{candidate.current_company || '—'}</p>
-                  </div>
                   <div className="space-y-1 md:col-span-2">
                     <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Skills</p>
                     <div className="flex flex-wrap gap-2 mt-2">
@@ -911,6 +1069,7 @@ export const CandidateDetail: React.FC = () => {
               )}
             </div>
           </section>
+          )}
 
           {/* Package & Team */}
           <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
@@ -919,7 +1078,7 @@ export const CandidateDetail: React.FC = () => {
                 <Package className="w-5 h-5 text-accent-teal" />
                 Package & Team Assignment
               </h3>
-              {canEdit && (
+              {canEditPackage && (
                 <button 
                   onClick={() => isEditingPackage ? handleSavePackage() : setIsEditingPackage(true)}
                   className="p-2 text-text-secondary hover:text-accent-blue transition-colors"
@@ -931,104 +1090,135 @@ export const CandidateDetail: React.FC = () => {
             <div className="p-6">
               {isEditingPackage ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {(!isLeadGen || isSalesperson) && (
+                    <>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-text-muted uppercase">Package Name</label>
+                        <input type="text" value={packageForm.package_name || ''} onChange={e => setPackageForm({...packageForm, package_name: e.target.value})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-text-muted uppercase">Package Amount (₹)</label>
+                        <input type="number" value={packageForm.package_amount || 0} onChange={e => setPackageForm({...packageForm, package_amount: Number(e.target.value)})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm" />
+                      </div>
+                    </>
+                  )}
                   <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-text-muted uppercase">Package Name</label>
-                    <input type="text" value={packageForm.package_name || ''} onChange={e => setPackageForm({...packageForm, package_name: e.target.value})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-text-muted uppercase">Package Amount (₹)</label>
-                    <input type="number" value={packageForm.package_amount || 0} onChange={e => setPackageForm({...packageForm, package_amount: Number(e.target.value)})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-text-muted uppercase">Assigned CS</label>
-                    <select value={packageForm.assigned_cs || ''} onChange={e => setPackageForm({...packageForm, assigned_cs: e.target.value})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm">
-                      <option value="">Select CS</option>
-                      {csUsers.map(u => <option key={u.id} value={u.id}>{u.display_name}</option>)}
+                    <label className="text-[10px] font-bold text-text-muted uppercase">Assigned Sales</label>
+                    <select value={packageForm.assigned_sales || ''} onChange={e => setPackageForm({...packageForm, assigned_sales: e.target.value})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm">
+                      <option value="">Select Sales</option>
+                      {salesUsers.map(u => <option key={u.id} value={u.id}>{u.display_name}</option>)}
                     </select>
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-text-muted uppercase">Assigned Resume</label>
-                    <select value={packageForm.assigned_resume || ''} onChange={e => setPackageForm({...packageForm, assigned_resume: e.target.value})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm">
-                      <option value="">Select Resume Team</option>
-                      {resumeUsers.map(u => <option key={u.id} value={u.id}>{u.display_name}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-text-muted uppercase">Marketing Leader (TL)</label>
-                    <select 
-                      value={packageForm.assigned_marketing_leader || ''} 
-                      onChange={e => setPackageForm({...packageForm, assigned_marketing_leader: e.target.value, assigned_recruiter: null})} 
-                      className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm"
-                    >
-                      <option value="">Select Marketing Leader</option>
-                      {marketingLeaders.map(u => <option key={u.id} value={u.id}>{u.display_name}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-text-muted uppercase">Assigned Recruiter</label>
-                    <select 
-                      value={packageForm.assigned_recruiter || ''} 
-                      onChange={e => setPackageForm({...packageForm, assigned_recruiter: e.target.value})} 
-                      className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm"
-                      disabled={!packageForm.assigned_marketing_leader}
-                    >
-                      <option value="">Select Recruiter</option>
-                      {filteredRecruiters.map(u => <option key={u.id} value={u.id}>{u.display_name}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-text-muted uppercase">Assigned Marketing</label>
-                    <select value={packageForm.assigned_marketing || ''} onChange={e => setPackageForm({...packageForm, assigned_marketing: e.target.value})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm">
-                      <option value="">Select Marketing</option>
-                      {marketingUsers.map(u => <option key={u.id} value={u.id}>{u.display_name}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-text-muted uppercase">Profiles Count (Target Multiplier)</label>
-                    <input type="number" value={packageForm.profiles_count || 1} onChange={e => setPackageForm({...packageForm, profiles_count: Number(e.target.value)})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm" />
-                  </div>
+                  {(!isLeadGen || isSalesperson) && (
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold text-text-muted uppercase">Assigned CS</label>
+                      <select value={packageForm.assigned_cs || ''} onChange={e => setPackageForm({...packageForm, assigned_cs: e.target.value})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm">
+                        <option value="">Select CS</option>
+                        {csUsers.map(u => <option key={u.id} value={u.id}>{u.display_name}</option>)}
+                      </select>
+                    </div>
+                  )}
+                  {!isLeadGen && !isSalesperson && (
+                    <>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-text-muted uppercase">Assigned Resume</label>
+                        <select value={packageForm.assigned_resume || ''} onChange={e => setPackageForm({...packageForm, assigned_resume: e.target.value})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm">
+                          <option value="">Select Resume Team</option>
+                          {resumeUsers.map(u => <option key={u.id} value={u.id}>{u.display_name}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-text-muted uppercase">Marketing Leader (TL)</label>
+                        <select 
+                          value={packageForm.assigned_marketing_leader || ''} 
+                          onChange={e => setPackageForm({...packageForm, assigned_marketing_leader: e.target.value, assigned_recruiter: null})} 
+                          className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm"
+                        >
+                          <option value="">Select Marketing Leader</option>
+                          {marketingLeaders.map(u => <option key={u.id} value={u.id}>{u.display_name}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-text-muted uppercase">Assigned Recruiter</label>
+                        <select 
+                          value={packageForm.assigned_recruiter || ''} 
+                          onChange={e => setPackageForm({...packageForm, assigned_recruiter: e.target.value})} 
+                          className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm"
+                          disabled={!packageForm.assigned_marketing_leader}
+                        >
+                          <option value="">Select Recruiter</option>
+                          {filteredRecruiters.map(u => <option key={u.id} value={u.id}>{u.display_name}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-text-muted uppercase">Assigned Marketing</label>
+                        <select value={packageForm.assigned_marketing || ''} onChange={e => setPackageForm({...packageForm, assigned_marketing: e.target.value})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm">
+                          <option value="">Select Marketing</option>
+                          {marketingUsers.map(u => <option key={u.id} value={u.id}>{u.display_name}</option>)}
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-text-muted uppercase">Profiles Count (Target Multiplier)</label>
+                        <input type="number" value={packageForm.profiles_count || 1} onChange={e => setPackageForm({...packageForm, profiles_count: Number(e.target.value)})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm" />
+                      </div>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-y-6 gap-x-12">
+                  {(!isLeadGen || isSalesperson) && (
+                    <>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Package Name</p>
+                        <p className="text-text-primary font-bold">{candidate.package_name || '—'}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Total Amount</p>
+                        <p className="text-text-primary font-bold text-lg">₹{candidate.package_amount.toLocaleString()}</p>
+                      </div>
+                    </>
+                  )}
                   <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Package Name</p>
-                    <p className="text-text-primary font-bold">{candidate.package_name || '—'}</p>
+                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Assigned Sales</p>
+                    <p className="text-text-primary font-medium">{allUsers.find(u => u.id === candidate.assigned_sales)?.display_name || '—'}</p>
                   </div>
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Total Amount</p>
-                    <p className="text-text-primary font-bold text-lg">₹{candidate.package_amount.toLocaleString()}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">CS Representative</p>
-                    <p className="text-text-primary font-medium">{allUsers.find(u => u.id === candidate.assigned_cs)?.display_name || '—'}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Resume Specialist</p>
-                    <p className="text-text-primary font-medium">{allUsers.find(u => u.id === candidate.assigned_resume)?.display_name || '—'}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Marketing Leader (TL)</p>
-                    <p className="text-text-primary font-medium">{allUsers.find(u => String(u.id) === String(candidate.assigned_marketing_leader))?.display_name || '—'}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Assigned Recruiter</p>
-                    <p className="text-text-primary font-medium">{allUsers.find(u => String(u.id) === String(candidate.assigned_recruiter))?.display_name || '—'}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Marketing Support</p>
-                    <p className="text-text-primary font-medium">{allUsers.find(u => String(u.id) === String(candidate.assigned_marketing))?.display_name || '—'}</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Profiles Count</p>
-                    <p className="text-text-primary font-bold">{candidate.profiles_count || 1}</p>
-                  </div>
+                  {(!isLeadGen || isSalesperson) && (
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">CS Representative</p>
+                      <p className="text-text-primary font-medium">{allUsers.find(u => u.id === candidate.assigned_cs)?.display_name || '—'}</p>
+                    </div>
+                  )}
+                  {!isLeadGen && !isSalesperson && (
+                    <>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Resume Specialist</p>
+                        <p className="text-text-primary font-medium">{allUsers.find(u => u.id === candidate.assigned_resume)?.display_name || '—'}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Marketing Leader (TL)</p>
+                        <p className="text-text-primary font-medium">{allUsers.find(u => String(u.id) === String(candidate.assigned_marketing_leader))?.display_name || '—'}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Assigned Recruiter</p>
+                        <p className="text-text-primary font-medium">{allUsers.find(u => String(u.id) === String(candidate.assigned_recruiter))?.display_name || '—'}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Marketing Support</p>
+                        <p className="text-text-primary font-medium">{allUsers.find(u => String(u.id) === String(candidate.assigned_marketing))?.display_name || '—'}</p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Profiles Count</p>
+                        <p className="text-text-primary font-bold">{candidate.profiles_count || 1}</p>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>
           </section>
 
           {/* Payments */}
-          {(user?.role === 'administrator' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter') && (
+          {(user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter' || isSalesperson) && (
             <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
               <div className="px-6 py-4 border-b border-border-primary flex items-center justify-between">
                 <h3 className="font-bold text-text-primary flex items-center gap-2">
@@ -1060,25 +1250,52 @@ export const CandidateDetail: React.FC = () => {
                         {p.status === 'paid' ? (
                           <>
                             <span className="text-[10px] px-2 py-1 bg-accent-green/10 text-accent-green font-bold rounded-full uppercase">Paid</span>
-                            <a 
-                              href={`#receipt?pay_id=${p.id}&cand_id=${candidate.id}`}
-                              className="p-2 text-text-secondary hover:text-accent-blue hover:bg-accent-blue/10 rounded-lg transition-all"
-                              title="View Receipt"
-                            >
-                              <FileText className="w-4 h-4" />
-                            </a>
+                            <div className="flex items-center gap-2">
+                              <a 
+                                href={`#receipt?pay_id=${p.id}&cand_id=${candidate.id}`}
+                                className="p-2 text-text-secondary hover:text-accent-blue hover:bg-accent-blue/10 rounded-lg transition-all"
+                                title="View Receipt"
+                              >
+                                <FileText className="w-4 h-4" />
+                              </a>
+                              {p.proof_url || p.proof_base64 ? (
+                                <a 
+                                  href={p.proof_url || p.proof_base64 || '#'}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="p-2 text-text-secondary hover:text-accent-purple hover:bg-accent-purple/10 rounded-lg transition-all"
+                                  title="View Proof"
+                                >
+                                  <Image className="w-4 h-4" />
+                                </a>
+                              ) : null}
+                              {canManagePayments && (
+                                <label className="p-2 text-text-secondary hover:text-accent-purple hover:bg-accent-purple/10 rounded-lg transition-all cursor-pointer" title="Upload Proof">
+                                  <Upload className="w-4 h-4" />
+                                  <input type="file" className="hidden" accept="image/*" onChange={(e) => handlePaymentProofUpload(p, e)} />
+                                </label>
+                              )}
+                            </div>
                           </>
                         ) : (
                           <>
                             <span className="text-[10px] px-2 py-1 bg-accent-amber/10 text-accent-amber font-bold rounded-full uppercase">Pending</span>
-                            {canEdit && (
-                              <button 
-                                onClick={() => handleMarkPaid(p)}
-                                className="px-3 py-1 bg-accent-green text-white text-xs font-bold rounded-lg hover:bg-accent-green/90 transition-all"
-                              >
-                                Mark Paid
-                              </button>
-                            )}
+                            <div className="flex items-center gap-2">
+                              {canManagePayments && (
+                                <button 
+                                  onClick={() => handleMarkPaid(p)}
+                                  className="px-3 py-1 bg-accent-green text-white text-xs font-bold rounded-lg hover:bg-accent-green/90 transition-all"
+                                >
+                                  Mark Paid
+                                </button>
+                              )}
+                              {canManagePayments && (
+                                <label className="p-2 text-text-secondary hover:text-accent-purple hover:bg-accent-purple/10 rounded-lg transition-all cursor-pointer" title="Upload Proof">
+                                  <Upload className="w-4 h-4" />
+                                  <input type="file" className="hidden" accept="image/*" onChange={(e) => handlePaymentProofUpload(p, e)} />
+                                </label>
+                              )}
+                            </div>
                           </>
                         )}
                       </div>
@@ -1087,14 +1304,14 @@ export const CandidateDetail: React.FC = () => {
                 </div>
 
                 {/* Add Payment Form */}
-                {canEdit && (
+                {canManagePayments && (
                   <form onSubmit={handleAddPayment} className="pt-6 border-t border-border-primary">
                     <p className="text-xs font-bold text-text-muted uppercase tracking-widest mb-4">Add Payment Plan</p>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                       <div className="space-y-1">
                         <label className="text-[10px] font-bold text-text-muted uppercase">Part #</label>
                         <select value={paymentForm.part_number} onChange={e => setPaymentForm({...paymentForm, part_number: Number(e.target.value)})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm">
-                          {[1,2,3,4,5].map(n => <option key={n} value={n}>Part {n}</option>)}
+                          {[1,2].map(n => <option key={n} value={n}>Part {n}</option>)}
                         </select>
                       </div>
                       <div className="space-y-1">
@@ -1118,7 +1335,7 @@ export const CandidateDetail: React.FC = () => {
           )}
 
           {/* Promises */}
-          {(user?.role === 'administrator' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter') && (
+          {(user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter' || isSalesperson) && (
             <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
               <div className="px-6 py-4 border-b border-border-primary flex items-center justify-between">
                 <h3 className="font-bold text-text-primary flex items-center gap-2">
@@ -1281,7 +1498,7 @@ export const CandidateDetail: React.FC = () => {
           </section>
 
           {/* QC Checklist */}
-          {(user?.role === 'administrator' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs') && (
+          {(user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs') && !isSalesperson && (
             <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
               <div className="px-6 py-4 border-b border-border-primary flex items-center justify-between">
                 <h3 className="font-bold text-text-primary flex items-center gap-2">
@@ -1329,65 +1546,110 @@ export const CandidateDetail: React.FC = () => {
           )}
 
           {/* Follow-Ups */}
-          <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
-            <div className="px-6 py-4 border-b border-border-primary">
-              <h3 className="font-bold text-text-primary flex items-center gap-2">
-                <Clock className="w-5 h-5 text-accent-amber" />
-                Follow-Ups
-              </h3>
-            </div>
-            <div className="p-6 space-y-6">
-              <div className="space-y-3">
-                {followUps.filter(f => !f.done).map(f => (
-                  <div key={f.id} className="p-4 bg-bg-tertiary/50 border border-border-primary rounded-xl">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-bold text-accent-amber flex items-center gap-1.5">
-                        <Calendar className="w-3.5 h-3.5" /> {f.followup_date}
-                      </span>
-                      {canEdit && (
-                        <button 
-                          onClick={async () => {
-                            await updateFollowUp({...f, done: true});
-                            await logActivity(candidate.id, 'Follow-up completed', `Note: ${f.note}`, user?.id || null);
-                          }}
-                          className="text-[10px] font-bold text-text-muted hover:text-accent-green uppercase transition-colors"
-                        >
-                          Mark Done
-                        </button>
-                      )}
-                    </div>
-                    <p className="text-sm text-text-primary">{f.note}</p>
-                  </div>
-                ))}
+          {(user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter' || isSalesperson) && (
+            <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
+              <div className="px-6 py-4 border-b border-border-primary">
+                <h3 className="font-bold text-text-primary flex items-center gap-2">
+                  <Clock className="w-5 h-5 text-accent-amber" />
+                  Follow-Ups
+                </h3>
               </div>
-              {canEdit && (
-                <div className="space-y-3 pt-4 border-t border-border-primary">
-                  <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Schedule New</p>
-                  <input 
-                    type="date" 
-                    value={followUpForm.date}
-                    onChange={e => setFollowUpForm({...followUpForm, date: e.target.value})}
-                    className="w-full bg-bg-tertiary border border-border-primary rounded-xl px-4 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-amber transition-colors"
-                  />
-                  <textarea 
-                    value={followUpForm.note}
-                    onChange={e => setFollowUpForm({...followUpForm, note: e.target.value})}
-                    placeholder="Follow-up note..."
-                    className="w-full bg-bg-tertiary border border-border-primary rounded-xl px-4 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-amber transition-colors min-h-[80px]"
-                  />
-                  <button 
-                    onClick={handleAddFollowUp}
-                    className="w-full py-2 bg-accent-amber text-white font-bold rounded-xl hover:bg-accent-amber/90 transition-all shadow-lg shadow-accent-amber/20"
-                  >
-                    Schedule Follow-Up
-                  </button>
+              <div className="p-6 space-y-6">
+                <div className="space-y-3">
+                  {followUps.filter(f => !f.done).map(f => (
+                    <div key={f.id} className="p-4 bg-bg-tertiary/50 border border-border-primary rounded-xl">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-bold text-accent-amber flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5" /> {f.followup_date}
+                        </span>
+                        {canManageFollowUps && (
+                          <button 
+                            onClick={async () => {
+                              await updateFollowUp({...f, done: true});
+                              await logActivity(candidate.id, 'Follow-up completed', `Note: ${f.note}`, user?.id || null);
+                            }}
+                            className="text-[10px] font-bold text-text-muted hover:text-accent-green uppercase transition-colors"
+                          >
+                            Mark Done
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-sm text-text-primary">{f.note}</p>
+                    </div>
+                  ))}
                 </div>
-              )}
-            </div>
-          </section>
+                {canManageFollowUps && (
+                  <div className="space-y-3 pt-4 border-t border-border-primary">
+                    <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Schedule New</p>
+                    <input 
+                      type="date" 
+                      value={followUpForm.date}
+                      onChange={e => setFollowUpForm({...followUpForm, date: e.target.value})}
+                      className="w-full bg-bg-tertiary border border-border-primary rounded-xl px-4 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-amber transition-colors"
+                    />
+                    <textarea 
+                      value={followUpForm.note}
+                      onChange={e => setFollowUpForm({...followUpForm, note: e.target.value})}
+                      placeholder="Follow-up note..."
+                      className="w-full bg-bg-tertiary border border-border-primary rounded-xl px-4 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-amber transition-colors min-h-[80px]"
+                    />
+                    <button 
+                      onClick={handleAddFollowUp}
+                      className="w-full py-2 bg-accent-amber text-white font-bold rounded-xl hover:bg-accent-amber/90 transition-all shadow-lg shadow-accent-amber/20"
+                    >
+                      Schedule Follow-Up
+                    </button>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* Remarks Section */}
+          {(user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter' || isSalesperson) && (
+            <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
+              <div className="px-6 py-4 border-b border-border-primary flex items-center justify-between">
+                <h3 className="font-bold text-text-primary flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5 text-accent-purple" />
+                  Remarks
+                </h3>
+                {canManageRemarks && (
+                  <button 
+                    onClick={() => isEditingRemarks ? handleSaveRemarks() : setIsEditingRemarks(true)}
+                    className="p-2 text-text-secondary hover:text-accent-blue transition-colors"
+                  >
+                    {isEditingRemarks ? <Save className="w-5 h-5" /> : <Edit2 className="w-5 h-5" />}
+                  </button>
+                )}
+              </div>
+              <div className="p-6">
+                {isEditingRemarks ? (
+                  <div className="space-y-4">
+                    <textarea 
+                      value={remarksForm}
+                      onChange={e => setRemarksForm(e.target.value)}
+                      placeholder="Add candidate remarks..."
+                      className="w-full bg-bg-tertiary border border-border-primary rounded-xl px-4 py-2 text-sm text-text-primary focus:outline-none focus:border-accent-purple transition-colors min-h-[120px]"
+                    />
+                    <button 
+                      onClick={handleSaveRemarks}
+                      className="w-full py-2 bg-accent-purple text-white font-bold rounded-xl hover:bg-accent-purple/90 transition-all shadow-lg shadow-accent-purple/20"
+                    >
+                      Save Remarks
+                    </button>
+                  </div>
+                ) : (
+                  <div className="bg-bg-tertiary/50 border border-border-primary rounded-xl p-4">
+                    <p className="text-sm text-text-primary whitespace-pre-wrap">{candidate.remarks || 'No remarks added yet.'}</p>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
 
           {/* Interview History */}
-          <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
+          {!isSalesperson && (
+            <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
             <div className="px-6 py-4 border-b border-border-primary flex items-center justify-between">
               <h3 className="font-bold text-text-primary flex items-center gap-2">
                 <Video className="w-5 h-5 text-accent-red" />
@@ -1428,9 +1690,11 @@ export const CandidateDetail: React.FC = () => {
               )}
             </div>
           </section>
+          )}
 
           {/* Application Performance */}
-          <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
+          {!isSalesperson && (
+            <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
             <div className="px-6 py-4 border-b border-border-primary flex items-center justify-between">
               <h3 className="font-bold text-text-primary flex items-center gap-2">
                 <TrendingUp className="w-5 h-5 text-accent-blue" />
@@ -1480,6 +1744,7 @@ export const CandidateDetail: React.FC = () => {
               </div>
             </div>
           </section>
+          )}
 
           {/* Activity Log */}
           <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">

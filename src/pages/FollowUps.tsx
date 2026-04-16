@@ -36,7 +36,7 @@ export const FollowUps: React.FC = () => {
   const today = new Date().toISOString().split('T')[0];
 
   const filteredFollowUps = useMemo(() => {
-    let list = user?.role === 'administrator' || user?.role === 'jpc_manager' 
+    let list = user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' 
       ? followUps 
       : followUps.filter(f => f.created_by === user?.id);
 
@@ -74,7 +74,7 @@ export const FollowUps: React.FC = () => {
         <div>
           <h1 className="text-3xl font-bold text-text-primary tracking-tight">Follow-Ups</h1>
           <p className="text-text-secondary mt-1">
-            {user?.role === 'administrator' || user?.role === 'jpc_manager' 
+            {user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' 
               ? 'Manage all team follow-ups and reminders.' 
               : 'Track your personal follow-ups and reminders.'}
           </p>

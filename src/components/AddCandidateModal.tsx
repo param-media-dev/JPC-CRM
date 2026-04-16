@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Modal } from './Modal';
 import { LEAD_SOURCES } from '../constants';
 import { getUsers, generateId, saveCandidate, seedQCChecklist, logActivity, addNotification } from '../services/storage';
+import { uploadFile } from '../services/fileService';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { Candidate, User } from '../types';
@@ -69,10 +70,15 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
     university: '',
     graduation_year: '',
     experience_years: '',
-    current_company: '',
     current_designation: '',
     skills: '',
     linkedin_url: ''
+  });
+
+  const [resumeData, setResumeData] = useState<{ base64: string | null, url: string | null, filename: string | null }>({
+    base64: null,
+    url: null,
+    filename: null
   });
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -88,10 +94,20 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
 
     setIsParsing(true);
     try {
+      // 1. Upload to external API
+      const url = await uploadFile(file);
+      
+      // 2. Read locally for parsing
       const reader = new FileReader();
       reader.onload = async (event) => {
-        const base64 = event.target?.result?.toString().split(',')[1];
+        const fullBase64 = event.target?.result?.toString();
+        const base64 = fullBase64?.split(',')[1];
         if (base64) {
+          setResumeData({
+            base64: fullBase64 || null,
+            url: url,
+            filename: file.name
+          });
           const parsed = await parseResume(base64, file.type);
           if (parsed) {
             setFormData(prev => ({
@@ -109,7 +125,6 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
               university: parsed.university || '',
               graduation_year: parsed.graduation_year || '',
               experience_years: parsed.experience_years || '',
-              current_company: parsed.current_company || '',
               current_designation: parsed.current_designation || '',
               skills: parsed.skills || '',
               linkedin_url: parsed.linkedin_url || ''
@@ -122,12 +137,8 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
       };
       reader.readAsDataURL(file);
     } catch (error: any) {
-      console.error('Error reading file:', error);
-      if (error.message?.includes('429')) {
-        showToast('Rate limit exceeded. Please try again in a few minutes.', 'error');
-      } else {
-        showToast('Error reading file', 'error');
-      }
+      console.error('Error uploading/reading file:', error);
+      showToast(error.message || 'Error processing file', 'error');
     } finally {
       setIsParsing(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -139,6 +150,11 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
     
     if (!formData.full_name || !formData.phone) {
       showToast('Name and Phone are required', 'error');
+      return;
+    }
+
+    if (!formData.assigned_sales) {
+      showToast('Assigned Sales is required', 'error');
       return;
     }
 
@@ -157,7 +173,7 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
       university: extraData.university,
       graduation_year: extraData.graduation_year,
       experience_years: extraData.experience_years,
-      current_company: extraData.current_company,
+      current_company: 'N/A',
       current_designation: extraData.current_designation,
       skills: extraData.skills,
       linkedin_url: extraData.linkedin_url,
@@ -174,6 +190,9 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
       domain_suggested: '',
       notes: formData.notes,
       current_stage: 'lead_generation',
+      resume_url: resumeData.url,
+      resume_base64: resumeData.base64,
+      resume_filename: resumeData.filename,
       flags: {
         agreement_sent: false,
         agreement_signed: false,
@@ -220,12 +239,12 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
       assigned_sales: '',
       notes: ''
     });
+    setResumeData({ base64: null, filename: null });
     setExtraData({
       degree: '',
       university: '',
       graduation_year: '',
       experience_years: '',
-      current_company: '',
       current_designation: '',
       skills: '',
       linkedin_url: ''

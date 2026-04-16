@@ -33,7 +33,7 @@ export const TRANSITIONS: Record<Stage, Stage[]> = {
 export const ROLE_PERMISSIONS: Record<Role, { allowedStages: Stage[] | 'ALL'; adminFeatures?: boolean; teamManagement?: boolean }> = {
   administrator: { allowedStages: 'ALL', adminFeatures: true, teamManagement: true },
   jpc_manager: { allowedStages: 'ALL', teamManagement: true },
-  jpc_sysadmin: { allowedStages: ['sys_admin'] },
+  jpc_sysadmin: { allowedStages: 'ALL', adminFeatures: true, teamManagement: true },
   jpc_lead_gen: { allowedStages: ['lead_generation'] },
   jpc_sales: { allowedStages: ['sales'] },
   jpc_cs: { allowedStages: ['cs_qc', 'cs_assign_recruiter'] },

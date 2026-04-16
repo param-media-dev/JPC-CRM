@@ -134,7 +134,7 @@ export const NotInterested: React.FC = () => {
                 </div>
 
                 <div className="mt-6 pt-6 border-t border-border-primary flex items-center gap-3">
-                  {(user?.role === 'administrator' || user?.role === 'jpc_manager') && (
+                  {(user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager') && (
                     <button 
                       onClick={() => handleRestore(candidate)}
                       className="flex-1 flex items-center justify-center gap-2 py-2 bg-accent-blue text-white text-xs font-bold rounded-xl hover:bg-accent-blue/90 transition-all shadow-lg shadow-accent-blue/20"

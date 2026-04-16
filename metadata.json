@@ -1,5 +1,5 @@
 {
-  "name": "Placify",
-  "description": "Placify: A comprehensive Job Placement CRM powered by Auriic. Features advanced Role-Based Access Control (RBAC), pipeline tracking, and team collaboration. Full documentation available in GUIDE.md.",
+  "name": "Application Tracker",
+  "description": "A professional application tracking CRM with real-time updates and duplicate link prevention.",
   "requestFramePermissions": []
 }

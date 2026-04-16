@@ -6,6 +6,7 @@ import { Users, CheckCircle2, Clock, UserX, ArrowRight, LayoutGrid, Phone, Calen
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { Candidate, FollowUp, Notification, ResumeChangeRequest, InterviewRequest, Application } from '../types';
+import { CandidateSheet } from '../components/CandidateSheet';
 import { db } from '../firebase';
 import { query, collection, where } from 'firebase/firestore';
 
@@ -18,6 +19,8 @@ export const Dashboard: React.FC = () => {
   const [interviews, setInterviews] = useState<InterviewRequest[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
+  const [isSheetOpen, setIsSheetOpen] = useState(false);
 
   useEffect(() => {
     if (!isAuthReady) return;
@@ -94,7 +97,7 @@ export const Dashboard: React.FC = () => {
   
   const today = new Date().toISOString().split('T')[0];
   const personalFollowUps = useMemo(() => {
-    return user?.role === 'administrator' || user?.role === 'jpc_manager' 
+    return user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' 
       ? followUps 
       : followUps.filter(f => f.created_by === user?.id);
   }, [followUps, user]);
@@ -281,13 +284,20 @@ export const Dashboard: React.FC = () => {
             
             <div className="space-y-4 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
               {targetAlerts.map(({ candidate, count, target }) => (
-                <div key={candidate.id} className="flex items-center justify-between p-3 bg-bg-tertiary/50 rounded-2xl border border-border-primary">
+                <button 
+                  key={candidate.id} 
+                  onClick={() => {
+                    setSelectedCandidate(candidate);
+                    setIsSheetOpen(true);
+                  }}
+                  className="w-full flex items-center justify-between p-3 bg-bg-tertiary/50 rounded-2xl border border-border-primary hover:border-accent-blue transition-colors group"
+                >
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-bg-secondary flex items-center justify-center text-[10px] font-bold text-text-secondary">
+                    <div className="w-8 h-8 rounded-full bg-bg-secondary flex items-center justify-center text-[10px] font-bold text-text-secondary group-hover:bg-accent-blue/10 group-hover:text-accent-blue transition-colors">
                       {candidate.full_name.split(' ').map(n => n[0]).join('')}
                     </div>
-                    <div>
-                      <p className="text-sm font-bold text-text-primary">{candidate.full_name}</p>
+                    <div className="text-left">
+                      <p className="text-sm font-bold text-text-primary group-hover:text-accent-blue transition-colors">{candidate.full_name}</p>
                       <p className="text-[10px] text-text-muted uppercase font-bold">{STAGES[candidate.current_stage].label}</p>
                     </div>
                   </div>
@@ -302,7 +312,7 @@ export const Dashboard: React.FC = () => {
                       />
                     </div>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>
@@ -470,17 +480,20 @@ export const Dashboard: React.FC = () => {
           <div className="bg-bg-secondary rounded-3xl border border-border-primary overflow-hidden shadow-sm">
             <div className="divide-y divide-border-primary">
               {recentCandidates.length > 0 ? recentCandidates.map(candidate => (
-                <a 
+                <button 
                   key={candidate.id} 
-                  href={`#candidate?id=${candidate.id}`}
-                  className="p-4 flex items-center gap-4 hover:bg-bg-tertiary transition-colors group"
+                  onClick={() => {
+                    setSelectedCandidate(candidate);
+                    setIsSheetOpen(true);
+                  }}
+                  className="w-full text-left p-4 flex items-center gap-4 hover:bg-bg-tertiary transition-colors group"
                 >
-                  <div className="w-10 h-10 rounded-full bg-bg-tertiary flex items-center justify-center text-text-secondary font-bold text-xs">
+                  <div className="w-10 h-10 rounded-full bg-bg-tertiary flex items-center justify-center text-text-secondary font-bold text-xs group-hover:bg-accent-blue/10 group-hover:text-accent-blue transition-colors">
                     {candidate.full_name.split(' ').map(n => n[0]).join('')}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-bold text-text-primary truncate">{candidate.full_name}</p>
+                      <p className="text-sm font-bold text-text-primary group-hover:text-accent-blue transition-colors truncate">{candidate.full_name}</p>
                       <span className="text-[10px] font-mono text-text-muted">{candidate.id}</span>
                     </div>
                     <p className="text-xs text-text-muted truncate">
@@ -490,7 +503,7 @@ export const Dashboard: React.FC = () => {
                   <p className="text-[10px] text-text-muted font-bold uppercase">
                     {new Date(candidate.updated_at).toLocaleDateString()}
                   </p>
-                </a>
+                </button>
               )) : (
                 <div className="p-8 text-center">
                   <AlertCircle className="w-8 h-8 text-text-muted mx-auto mb-2" />
@@ -506,6 +519,14 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
       </div>
+      <CandidateSheet 
+        candidate={selectedCandidate}
+        isOpen={isSheetOpen}
+        onClose={() => {
+          setIsSheetOpen(false);
+          setSelectedCandidate(null);
+        }}
+      />
     </div>
   );
 };

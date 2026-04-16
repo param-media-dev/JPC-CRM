@@ -54,7 +54,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               username: fUser.email?.split('@')[0] || 'user',
               display_name: fUser.displayName || candidateData?.full_name || 'User',
               role: fUser.email === 'paramatwork3076@gmail.com' ? 'administrator' : (candidateData ? 'candidate' : 'jpc_sales'),
-              candidate_id: candidateData?.id,
+              candidate_id: candidateData?.id || null,
               created_at: new Date().toISOString()
             };
             try {

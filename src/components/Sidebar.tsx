@@ -71,7 +71,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentHash, isOpen, setIsOpen
       label: 'Pipeline', 
       hash: '#pipeline', 
       icon: Trello, 
-      visible: user?.role === 'administrator' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter' || user?.role === 'jpc_marketing' || user?.role === 'jpc_sales'
+      visible: user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter' || user?.role === 'jpc_marketing' || user?.role === 'jpc_sales'
     },
     { label: 'Candidates', hash: '#candidates', icon: Users, visible: user?.role !== 'candidate' && user?.role !== 'jpc_candidate' },
     { 
@@ -85,19 +85,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentHash, isOpen, setIsOpen
       label: 'App Tracker', 
       hash: '#applications', 
       icon: FileText, 
-      visible: user?.role === 'administrator' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter'
+      visible: user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter'
     },
     { 
       label: 'Resume Log', 
       hash: '#resume-log', 
       icon: FileEdit, 
-      visible: user?.role === 'administrator' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter' || user?.role === 'jpc_resume'
+      visible: user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter' || user?.role === 'jpc_resume'
     },
     { 
       label: 'Interview Support', 
       hash: '#interviews', 
       icon: Video, 
-      visible: user?.role === 'administrator' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter' || user?.role === 'jpc_proxy'
+      visible: user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter' || user?.role === 'jpc_proxy'
     },
     { 
       label: 'Not Interested', 
@@ -110,7 +110,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentHash, isOpen, setIsOpen
       label: 'Team', 
       hash: '#team', 
       icon: Shield, 
-      visible: (user?.role === 'administrator' || user?.role === 'jpc_manager')
+      visible: (user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager')
     },
   ];
 

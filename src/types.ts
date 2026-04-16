@@ -93,6 +93,10 @@ export interface Candidate {
   created_at: string;
   updated_at: string;
   temp_portal_password?: string | null;
+  resume_url?: string | null;
+  resume_base64?: string | null;
+  resume_filename?: string | null;
+  remarks?: string;
 }
 
 export interface Payment {
@@ -108,6 +112,9 @@ export interface Payment {
   notes: string;
   created_by: string | number | null;
   created_at: string;
+  proof_url?: string | null;
+  proof_base64?: string | null;
+  proof_filename?: string | null;
 }
 
 export interface FollowUp {
@@ -157,6 +164,7 @@ export interface Application {
   recruiter_id: string;
   job_link: string;
   company_name: string;
+  sheet_type?: string;
   applied_at: string;
   created_at: string;
 }

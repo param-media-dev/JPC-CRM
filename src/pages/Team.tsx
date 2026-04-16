@@ -14,6 +14,7 @@ import { getAuth, signOut as secondarySignOut, updateProfile, createUserWithEmai
 
 const ROLES: { value: UserRole; label: string; icon: any; color: string }[] = [
   { value: 'administrator', label: 'Administrator', icon: ShieldCheck, color: 'text-accent-red' },
+  { value: 'jpc_sysadmin', label: 'System Admin', icon: ShieldCheck, color: 'text-accent-red' },
   { value: 'jpc_manager', label: 'Placify Manager', icon: Shield, color: 'text-accent-purple' },
   { value: 'jpc_lead_gen', label: 'Lead Generation', icon: UserPlus, color: 'text-accent-amber' },
   { value: 'jpc_sales', label: 'Sales Team', icon: UserCheck, color: 'text-accent-blue' },
@@ -56,8 +57,8 @@ export const Team: React.FC = () => {
   }, [isAuthReady]);
 
   const canManage = (targetRole: UserRole) => {
-    if (user?.role === 'administrator') return true;
-    if (user?.role === 'jpc_manager' && targetRole !== 'administrator') return true;
+    if (user?.role === 'administrator' || user?.role === 'jpc_sysadmin') return true;
+    if (user?.role === 'jpc_manager' && targetRole !== 'administrator' && targetRole !== 'jpc_sysadmin') return true;
     return false;
   };
 
@@ -326,7 +327,7 @@ export const Team: React.FC = () => {
           <p className="text-text-secondary mt-1">Manage your team members and their access levels.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          {user?.role === 'administrator' && (
+          {(user?.role === 'administrator' || user?.role === 'jpc_sysadmin') && (
             <button 
               onClick={() => setIsResetModalOpen(true)}
               className="flex items-center gap-2 px-6 py-3 bg-accent-red/10 text-accent-red border border-accent-red/20 font-bold rounded-2xl hover:bg-accent-red/20 transition-all"
@@ -335,7 +336,7 @@ export const Team: React.FC = () => {
               Reset Database
             </button>
           )}
-          {(user?.role === 'administrator' || user?.role === 'jpc_manager') && (
+          {(user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager') && (
             <button 
               onClick={() => {
                 setEditingUser(null);

@@ -20,6 +20,7 @@ import { cn } from '../lib/utils';
 import { db } from '../firebase';
 import { doc, setDoc, updateDoc } from 'firebase/firestore';
 import { useToast } from '../contexts/ToastContext';
+import { uploadFile } from '../services/fileService';
 import { Upload, FileText, Loader2 } from 'lucide-react';
 
 export const ResumeLogBook: React.FC = () => {
@@ -151,68 +152,16 @@ export const ResumeLogBook: React.FC = () => {
           return;
         }
 
-        // Use Local Proxy API for upload to bypass CORS
         try {
-          const formData = new FormData();
-          formData.append('file', selectedFile);
-
           setUploadProgress(30);
-          const response = await fetch('/api/upload', {
-            method: 'POST',
-            body: formData
-          });
-
-          if (!response.ok) {
-            let errorMessage = `Upload failed with status: ${response.status}`;
-            try {
-              const errorData = await response.json();
-              errorMessage = errorData.details || errorData.error || errorMessage;
-            } catch (e) {
-              // If parsing JSON fails, try to get text
-              try {
-                const textError = await response.text();
-                if (textError && textError.length < 200) errorMessage = textError;
-              } catch (e2) {}
-            }
-            throw new Error(errorMessage);
-          }
-
-          const result = await response.json();
-          setUploadProgress(100);
-          
-          // Assuming the API returns the file URL in a 'url' or 'file_url' field
-          finalResumeUrl = result.url || result.file_url || result.data?.url;
-          
-          if (!finalResumeUrl) {
-            console.warn('API did not return a URL, falling back to Base64');
-            // Fallback to Base64 if API succeeds but URL is missing
-            resumeFilename = selectedFile.name;
-            resumeBase64 = await new Promise((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => resolve(reader.result as string);
-              reader.onerror = reject;
-              reader.readAsDataURL(selectedFile);
-            });
-          }
-        } catch (apiError: any) {
-          console.error('Custom API Upload error:', apiError);
-          showToast('API Upload failed, using local storage fallback', 'warning');
-          
-          // Fallback to Base64 if API fails
-          if (selectedFile.size > 800 * 1024) {
-            showToast('File too large for fallback. Use a smaller file.', 'error');
-            setIsUploading(false);
-            return;
-          }
-
+          finalResumeUrl = await uploadFile(selectedFile);
           resumeFilename = selectedFile.name;
-          resumeBase64 = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(selectedFile);
-          });
           setUploadProgress(100);
+        } catch (apiError: any) {
+          console.error('Upload error:', apiError);
+          showToast('Upload failed', 'error');
+          setIsUploading(false);
+          return;
         }
       }
 
@@ -419,22 +368,15 @@ export const ResumeLogBook: React.FC = () => {
                     {(req.new_resume_url || req.resume_base64) && (
                       <div className="flex items-center gap-2 pt-2">
                         <span className="text-xs font-bold text-text-primary">New Resume:</span>
-                        <button 
-                          onClick={() => {
-                            if (req.resume_base64) {
-                              const link = document.createElement('a');
-                              link.href = req.resume_base64;
-                              link.download = req.resume_filename || 'updated_resume';
-                              link.click();
-                            } else if (req.new_resume_url) {
-                              window.open(req.new_resume_url, '_blank');
-                            }
-                          }}
+                        <a 
+                          href={req.new_resume_url || req.resume_base64}
+                          target="_blank"
+                          rel="noreferrer"
                           className="text-xs text-accent-blue hover:underline flex items-center gap-1"
                         >
                           <ExternalLink className="w-3 h-3" />
-                          {req.resume_base64 ? 'Download Document' : 'View Document'}
-                        </button>
+                          View / Download Document
+                        </a>
                       </div>
                     )}
                   </div>
