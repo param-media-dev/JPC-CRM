@@ -127,6 +127,38 @@ export const getUsers = async (): Promise<User[]> => {
 };
 
 // Candidates
+export const checkDuplicateCandidate = async (phone: string, email: string, whatsapp: string): Promise<string | null> => {
+  try {
+    const candidatesRef = collection(db, 'jpc_candidates');
+    
+    // Check Phone
+    if (phone && phone.trim() !== '') {
+      const pQuery = query(candidatesRef, where('phone', '==', phone.trim()));
+      const snap = await getDocs(pQuery);
+      if (!snap.empty) return `A candidate with the phone number ${phone} already exists.`;
+    }
+
+    // Check Email
+    if (email && email.trim() !== '') {
+      const eQuery = query(candidatesRef, where('email', '==', email.trim()));
+      const snap = await getDocs(eQuery);
+      if (!snap.empty) return `A candidate with the email ${email} already exists.`;
+    }
+
+    // Check WhatsApp
+    if (whatsapp && whatsapp.trim() !== '') {
+      const wQuery = query(candidatesRef, where('whatsapp', '==', whatsapp.trim()));
+      const snap = await getDocs(wQuery);
+      if (!snap.empty) return `A candidate with the WhatsApp number ${whatsapp} already exists.`;
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Error checking for duplicate candidates:", error);
+    return null;
+  }
+};
+
 export const saveCandidate = async (candidate: Candidate, userId: string | null) => {
   try {
     const data = { ...candidate, updated_at: new Date().toISOString() };

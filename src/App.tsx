@@ -55,7 +55,6 @@ const AppContent: React.FC = () => {
       
       // Only run maintenance tasks for administrators
       if (user.role === 'administrator' || user.role === 'jpc_sysadmin') {
-        seedData().catch(console.error);
         migrateAllChecklists().catch(console.error);
       }
     }

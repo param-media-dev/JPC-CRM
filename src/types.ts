@@ -96,6 +96,8 @@ export interface Candidate {
   resume_url?: string | null;
   resume_base64?: string | null;
   resume_filename?: string | null;
+  agreement_url?: string | null;
+  agreement_filename?: string | null;
   remarks?: string;
 }
 

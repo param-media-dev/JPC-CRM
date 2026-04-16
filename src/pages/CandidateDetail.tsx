@@ -81,6 +81,7 @@ export const CandidateDetail: React.FC = () => {
   const canManagePayments = !isCandidate && !isLeadGen;
   const canManageFollowUps = !isCandidate && !isLeadGen;
   const canManageRemarks = !isCandidate && !isLeadGen;
+  const canManageAgreement = user?.role === 'jpc_cs' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager';
 
   const [candidate, setCandidate] = useState<Candidate | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
@@ -543,7 +544,42 @@ export const CandidateDetail: React.FC = () => {
     }
   };
 
+  const handleDownloadAgreement = () => {
+    if (!candidate || !candidate.agreement_url) return;
+    const link = document.createElement('a');
+    link.href = candidate.agreement_url;
+    link.download = candidate.agreement_filename || 'agreement.pdf';
+    link.target = "_blank";
+    link.click();
+  };
+
+  const handleAgreementUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !candidate) return;
+
+    try {
+      showToast('Uploading agreement...', 'info');
+      const url = await uploadFile(file);
+      const updated: Candidate = {
+        ...candidate,
+        agreement_url: url,
+        agreement_filename: file.name,
+        updated_at: new Date().toISOString()
+      };
+      await saveCandidate(updated, user?.id || null);
+      await logActivity(candidate.id, 'Agreement uploaded', `Agreement document uploaded: ${file.name}`, user?.id || null);
+      showToast('Agreement uploaded successfully', 'success');
+    } catch (error) {
+      showToast('Failed to upload agreement', 'error');
+    }
+  };
+
   const handleStageMove = async (newStage: Stage) => {
+    if (user?.role === 'jpc_cs' && !candidate.agreement_url) {
+      showToast('Agreement must be uploaded before moving to another step.', 'error');
+      return;
+    }
+
     const oldStageLabel = STAGES[candidate.current_stage].label;
     const newStageLabel = STAGES[newStage].label;
     
@@ -798,25 +834,40 @@ export const CandidateDetail: React.FC = () => {
 
       {/* Stage Move Bar */}
       {(canEdit || isSalesperson) && (
-        <div className="bg-bg-secondary border border-border-primary rounded-2xl p-4 flex flex-wrap items-center gap-3">
-          <span className="text-xs font-bold text-text-muted uppercase tracking-widest mr-2">Move to Stage:</span>
-          {TRANSITIONS[candidate.current_stage].map(stageKey => (
-            <button
-              key={stageKey}
-              onClick={() => handleStageMove(stageKey as Stage)}
-              className="px-4 py-2 bg-bg-tertiary border border-border-primary rounded-xl text-sm font-bold text-text-primary hover:border-accent-blue hover:text-accent-blue transition-all flex items-center gap-2"
-            >
-              {STAGES[stageKey as Stage].icon} {STAGES[stageKey as Stage].label.split('. ')[1] || STAGES[stageKey as Stage].label}
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          ))}
-          {candidate.current_stage !== 'not_interested' && (
-            <button
-              onClick={() => handleStageMove('not_interested')}
-              className="px-4 py-2 bg-rose-500/10 border border-rose-500/20 rounded-xl text-sm font-bold text-rose-500 hover:bg-rose-500 hover:text-white transition-all ml-auto"
-            >
-              Not Interested
-            </button>
+        <div className="bg-bg-secondary border border-border-primary rounded-2xl p-4 flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-xs font-bold text-text-muted uppercase tracking-widest mr-2">Move to Stage:</span>
+            {TRANSITIONS[candidate.current_stage].map(stageKey => {
+              const isDisabled = user?.role === 'jpc_cs' && !candidate.agreement_url;
+              return (
+                <button
+                  key={stageKey}
+                  onClick={() => handleStageMove(stageKey as Stage)}
+                  disabled={isDisabled}
+                  className={cn(
+                    "px-4 py-2 bg-bg-tertiary border border-border-primary rounded-xl text-sm font-bold transition-all flex items-center gap-2",
+                    isDisabled ? "opacity-50 cursor-not-allowed text-text-muted" : "text-text-primary hover:border-accent-blue hover:text-accent-blue"
+                  )}
+                >
+                  {STAGES[stageKey as Stage].icon} {STAGES[stageKey as Stage].label.split('. ')[1] || STAGES[stageKey as Stage].label}
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              );
+            })}
+            {candidate.current_stage !== 'not_interested' && (
+              <button
+                onClick={() => handleStageMove('not_interested')}
+                className="px-4 py-2 bg-rose-500/10 border border-rose-500/20 rounded-xl text-sm font-bold text-rose-500 hover:bg-rose-500 hover:text-white transition-all ml-auto"
+              >
+                Not Interested
+              </button>
+            )}
+          </div>
+          {user?.role === 'jpc_cs' && !candidate.agreement_url && (
+            <div className="text-xs text-rose-500 flex items-center gap-1.5 font-bold">
+              <AlertCircle className="w-4 h-4" />
+              You must upload the Candidate Agreement before moving the candidate to the next stage.
+            </div>
           )}
         </div>
       )}
@@ -912,6 +963,70 @@ export const CandidateDetail: React.FC = () => {
               </div>
             )}
           </section>
+
+          {/* Agreement Section */}
+          {canManageAgreement && (
+            <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm mt-8">
+              <div className="px-6 py-4 border-b border-border-primary flex items-center justify-between">
+                <h3 className="font-bold text-text-primary flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-accent-blue" />
+                  Candidate Agreement
+                </h3>
+                <div className="flex items-center gap-2">
+                  {candidate.agreement_url ? (
+                    <button 
+                      onClick={handleDownloadAgreement}
+                      className="flex items-center gap-2 px-4 py-2 bg-accent-blue/10 text-accent-blue font-bold rounded-xl hover:bg-accent-blue hover:text-white transition-all text-xs"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download
+                    </button>
+                  ) : null}
+                  <label className="flex items-center gap-2 px-4 py-2 bg-bg-tertiary border border-border-primary text-text-primary font-bold rounded-xl hover:border-accent-blue hover:text-accent-blue transition-all text-xs cursor-pointer">
+                    <Upload className="w-4 h-4" />
+                    {candidate.agreement_url ? 'Update Agreement' : 'Upload Agreement'}
+                    <input type="file" className="hidden" accept=".pdf,.doc,.docx" onChange={handleAgreementUpload} />
+                  </label>
+                </div>
+              </div>
+              <div className="p-6">
+                {candidate.agreement_url ? (
+                  <div className="flex items-center gap-4 p-4 bg-bg-tertiary rounded-2xl border border-border-primary">
+                    <div className="w-12 h-12 bg-accent-blue/10 rounded-xl flex items-center justify-center text-accent-blue">
+                      <FileText className="w-6 h-6" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-text-primary truncate">{candidate.agreement_filename || 'agreement.pdf'}</p>
+                      <p className="text-xs text-text-muted font-bold uppercase">Uploaded securely</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={handleDownloadAgreement}
+                        className="p-2 text-text-secondary hover:text-accent-blue hover:bg-accent-blue/10 rounded-lg transition-all"
+                        title="Download"
+                      >
+                        <Download className="w-4 h-4" />
+                      </button>
+                      <a 
+                        href={candidate.agreement_url} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="p-2 text-text-secondary hover:text-accent-blue hover:bg-accent-blue/10 rounded-lg transition-all"
+                        title="View"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </a>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 border-2 border-dashed border-border-primary rounded-2xl">
+                    <ShieldCheck className="w-12 h-12 text-text-muted mx-auto mb-2" />
+                    <p className="text-sm text-text-secondary">No agreement uploaded yet</p>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
 
           {/* Personal Info */}
           {!isSalesperson && (

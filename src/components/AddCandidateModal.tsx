@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Modal } from './Modal';
 import { LEAD_SOURCES } from '../constants';
-import { getUsers, generateId, saveCandidate, seedQCChecklist, logActivity, addNotification } from '../services/storage';
+import { getUsers, generateId, saveCandidate, seedQCChecklist, logActivity, addNotification, checkDuplicateCandidate } from '../services/storage';
 import { uploadFile } from '../services/fileService';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -154,7 +154,7 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!formData.full_name || !formData.phone) {
@@ -164,6 +164,12 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
 
     if (!formData.assigned_sales) {
       showToast('Assigned Sales is required', 'error');
+      return;
+    }
+
+    const duplicateError = await checkDuplicateCandidate(formData.phone, formData.email, formData.whatsapp);
+    if (duplicateError) {
+      showToast(duplicateError, 'error');
       return;
     }
 
