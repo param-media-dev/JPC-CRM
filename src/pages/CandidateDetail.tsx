@@ -180,8 +180,7 @@ export const CandidateDetail: React.FC = () => {
   const csUsers = allUsers.filter(u => u.role === 'jpc_cs');
   const resumeUsers = allUsers.filter(u => u.role === 'jpc_resume');
   const marketingLeaders = allUsers.filter(u => u.role === 'jpc_marketing');
-  
-  const marketingUsers = allUsers.filter(u => u.role === 'jpc_marketing');
+  const marketingUsers = allUsers.filter(u => u.role === 'jpc_marketing_support' || u.role === 'jpc_marketing');
 
   // Edit states
   const [isEditingPersonal, setIsEditingPersonal] = useState(false);

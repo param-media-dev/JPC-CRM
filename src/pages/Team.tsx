@@ -21,7 +21,8 @@ const ROLES: { value: UserRole; label: string; icon: any; color: string }[] = [
   { value: 'jpc_cs', label: 'Customer Success', icon: UserCheck, color: 'text-accent-teal' },
   { value: 'jpc_resume', label: 'Resume Team', icon: UserCheck, color: 'text-accent-amber' },
   { value: 'jpc_recruiter', label: 'Recruiter', icon: UserCheck, color: 'text-accent-green' },
-  { value: 'jpc_marketing', label: 'Marketing', icon: UserCheck, color: 'text-accent-gray' },
+  { value: 'jpc_marketing', label: 'Marketing Leader (TL)', icon: Shield, color: 'text-accent-gray' },
+  { value: 'jpc_marketing_support', label: 'Marketing Support', icon: UserCheck, color: 'text-accent-gray' },
   { value: 'jpc_proxy', label: 'Proxy Team', icon: UserCheck, color: 'text-accent-blue' },
   { value: 'jpc_candidate', label: 'Candidate User', icon: UserCheck, color: 'text-accent-teal' },
 ];

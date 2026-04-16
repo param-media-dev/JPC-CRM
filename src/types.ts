@@ -7,6 +7,7 @@ export type Role =
   | 'jpc_cs'
   | 'jpc_resume'
   | 'jpc_marketing'
+  | 'jpc_marketing_support'
   | 'jpc_recruiter'
   | 'jpc_proxy'
   | 'jpc_candidate'
