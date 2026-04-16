@@ -97,45 +97,54 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
       // 1. Upload to external API
       const url = await uploadFile(file);
       
-      // 2. Read locally for parsing
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        const fullBase64 = event.target?.result?.toString();
-        const base64 = fullBase64?.split(',')[1];
-        if (base64) {
-          setResumeData({
-            base64: fullBase64 || null,
-            url: url,
-            filename: file.name
-          });
-          const parsed = await parseResume(base64, file.type);
-          if (parsed) {
-            setFormData(prev => ({
-              ...prev,
-              full_name: parsed.full_name || prev.full_name,
-              phone: parsed.phone || prev.phone,
-              email: parsed.email || prev.email,
-              job_interest: parsed.job_interest || prev.job_interest,
-              location: parsed.location || prev.location,
-              education: parsed.education || prev.education,
-              notes: parsed.notes || prev.notes
-            }));
-            setExtraData({
-              degree: parsed.degree || '',
-              university: parsed.university || '',
-              graduation_year: parsed.graduation_year || '',
-              experience_years: parsed.experience_years || '',
-              current_designation: parsed.current_designation || '',
-              skills: parsed.skills || '',
-              linkedin_url: parsed.linkedin_url || ''
-            });
-            showToast('Resume parsed successfully!', 'success');
-          } else {
-            showToast('Failed to parse resume details', 'error');
+      // 2. Read locally for parsing and wait for it
+      await new Promise<void>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          try {
+            const fullBase64 = event.target?.result?.toString();
+            const base64 = fullBase64?.split(',')[1];
+            if (base64) {
+              setResumeData({
+                base64: fullBase64 || null,
+                url: url,
+                filename: file.name
+              });
+              const parsed = await parseResume(base64, file.type);
+              if (parsed) {
+                setFormData(prev => ({
+                  ...prev,
+                  full_name: parsed.full_name || prev.full_name,
+                  phone: parsed.phone || prev.phone,
+                  email: parsed.email || prev.email,
+                  job_interest: parsed.job_interest || prev.job_interest,
+                  location: parsed.location || prev.location,
+                  education: parsed.education || prev.education,
+                  notes: parsed.notes || prev.notes
+                }));
+                setExtraData({
+                  degree: parsed.degree || '',
+                  university: parsed.university || '',
+                  graduation_year: parsed.graduation_year || '',
+                  experience_years: parsed.experience_years || '',
+                  current_designation: parsed.current_designation || '',
+                  skills: parsed.skills || '',
+                  linkedin_url: parsed.linkedin_url || ''
+                });
+                showToast('Resume parsed successfully!', 'success');
+              } else {
+                showToast('Failed to parse resume details', 'error');
+              }
+            }
+            resolve();
+          } catch (e: any) {
+            console.error("FileReader onload error:", e);
+            reject(e);
           }
-        }
-      };
-      reader.readAsDataURL(file);
+        };
+        reader.onerror = (e) => reject(e);
+        reader.readAsDataURL(file);
+      });
     } catch (error: any) {
       console.error('Error uploading/reading file:', error);
       showToast(error.message || 'Error processing file', 'error');

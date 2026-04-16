@@ -57,8 +57,7 @@ export async function parseResume(fileBase64: string, mimeType: string): Promise
             skills: { type: Type.STRING },
             linkedin_url: { type: Type.STRING },
             notes: { type: Type.STRING },
-          },
-          required: ["full_name", "phone", "email"],
+          }
         },
       },
     });

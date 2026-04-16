@@ -40,7 +40,7 @@ export const LoginPage: React.FC = () => {
         showToast('Successfully logged in!', 'success');
       }
     } catch (error: any) {
-      console.error('Auth error:', error);
+      console.warn('Auth error:', error.message);
       let message = 'Failed to authenticate. Please try again.';
       if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
         message = 'Invalid email or password. If you haven\'t created an account yet, please Sign Up first.';
