@@ -57,6 +57,17 @@ export const Team: React.FC = () => {
     return () => unsub();
   }, [isAuthReady]);
 
+  const visibleTeam = useMemo(() => {
+    if (!user) return [];
+    if (user.role === 'administrator' || user.role === 'jpc_sysadmin' || user.role === 'jpc_manager') {
+      return team;
+    }
+    if (user.role === 'jpc_marketing') {
+      return team.filter(u => String(u.leader_id) === String(user.id) || u.id === user.id);
+    }
+    return team.filter(u => u.id === user.id);
+  }, [team, user]);
+
   const canManage = (targetRole: UserRole) => {
     if (user?.role === 'administrator' || user?.role === 'jpc_sysadmin') return true;
     if (user?.role === 'jpc_manager' && targetRole !== 'administrator' && targetRole !== 'jpc_sysadmin') return true;
@@ -356,7 +367,7 @@ export const Team: React.FC = () => {
       {/* Role Groups */}
       <div className="space-y-10">
         {ROLES.map((role) => {
-          const roleMembers = team.filter(u => u.role === role.value);
+          const roleMembers = visibleTeam.filter(u => u.role === role.value);
           if (roleMembers.length === 0) return null;
 
           return (

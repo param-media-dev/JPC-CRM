@@ -56,6 +56,12 @@ export const Candidates: React.FC = () => {
       // Lead Gen can only see their own leads
       if (user?.role === 'jpc_lead_gen' && String(c.lead_generated_by) !== String(user?.id)) return false;
 
+      // Recruiter sees only their assigned ones
+      if (user?.role === 'jpc_recruiter' && String(c.assigned_recruiter) !== String(user?.id)) return false;
+
+      // Marketing TL sees only their cluster ones
+      if (user?.role === 'jpc_marketing' && String(c.assigned_marketing_leader) !== String(user?.id)) return false;
+
       const matchesSearch = 
         c.full_name.toLowerCase().includes(search.toLowerCase()) ||
         c.phone.includes(search) ||

@@ -71,6 +71,8 @@ export const Dashboard: React.FC = () => {
       filtered = filtered.filter(c => String(c.assigned_recruiter) === String(user.id));
     } else if (user?.role === 'jpc_lead_gen') {
       filtered = filtered.filter(c => String(c.lead_generated_by) === String(user.id));
+    } else if (user?.role === 'jpc_marketing') {
+      filtered = filtered.filter(c => String(c.assigned_marketing_leader) === String(user.id));
     }
     return filtered;
   }, [candidates, user]);
@@ -81,6 +83,8 @@ export const Dashboard: React.FC = () => {
       filtered = filtered.filter(c => String(c.assigned_recruiter) === String(user.id));
     } else if (user?.role === 'jpc_lead_gen') {
       filtered = filtered.filter(c => String(c.lead_generated_by) === String(user.id));
+    } else if (user?.role === 'jpc_marketing') {
+      filtered = filtered.filter(c => String(c.assigned_marketing_leader) === String(user.id));
     }
     return filtered.length;
   }, [candidates, user]);
@@ -91,6 +95,8 @@ export const Dashboard: React.FC = () => {
       filtered = filtered.filter(c => String(c.assigned_recruiter) === String(user.id));
     } else if (user?.role === 'jpc_lead_gen') {
       filtered = filtered.filter(c => String(c.lead_generated_by) === String(user.id));
+    } else if (user?.role === 'jpc_marketing') {
+      filtered = filtered.filter(c => String(c.assigned_marketing_leader) === String(user.id));
     }
     return filtered.length;
   }, [candidates, user]);
@@ -132,6 +138,12 @@ export const Dashboard: React.FC = () => {
       // Recruiters only see apps for their assigned candidates
       const myCandidateIds = candidates
         .filter(c => String(c.assigned_recruiter) === String(user.id))
+        .map(c => c.id);
+      filteredApps = applications.filter(a => myCandidateIds.includes(a.candidate_id));
+    } else if (user?.role === 'jpc_marketing') {
+      // Marketing TLs only see apps for candidates in their cluster
+      const myCandidateIds = candidates
+        .filter(c => String(c.assigned_marketing_leader) === String(user.id))
         .map(c => c.id);
       filteredApps = applications.filter(a => myCandidateIds.includes(a.candidate_id));
     }

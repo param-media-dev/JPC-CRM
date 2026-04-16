@@ -94,6 +94,8 @@ export const AppTracker: React.FC = () => {
       .filter(c => {
         if (user?.role === 'jpc_recruiter') {
           return String(c.assigned_recruiter) === String(user.id);
+        } else if (user?.role === 'jpc_marketing') {
+          return String(c.assigned_marketing_leader) === String(user.id);
         }
         return true;
       })
@@ -196,6 +198,8 @@ export const AppTracker: React.FC = () => {
     return candidates.filter(c => {
       if (user?.role === 'jpc_recruiter') {
         return String(c.assigned_recruiter) === String(user.id);
+      } else if (user?.role === 'jpc_marketing') {
+        return String(c.assigned_marketing_leader) === String(user.id);
       }
       return true;
     }).filter(c => c.current_stage !== 'not_interested');

@@ -34,6 +34,8 @@ export const Pipeline: React.FC = () => {
         return String(c.assigned_recruiter) === String(user.id);
       } else if (user?.role === 'jpc_lead_gen') {
         return String(c.lead_generated_by) === String(user.id);
+      } else if (user?.role === 'jpc_marketing') {
+        return String(c.assigned_marketing_leader) === String(user.id);
       }
       
       return true;
