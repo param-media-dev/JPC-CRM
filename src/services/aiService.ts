@@ -1,4 +1,8 @@
 import { GoogleGenAI, Type } from '@google/genai';
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Configure the worker for pdfjs
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
 export interface ParsedCandidate {
   full_name: string;
@@ -18,26 +22,63 @@ export interface ParsedCandidate {
   notes: string;
 }
 
+const extractTextFromPDF = async (base64: string): Promise<string> => {
+  try {
+    const binaryString = window.atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+    let text = '';
+    // Only parse the first 5 pages to save time/tokens if it's super long
+    const numPages = Math.min(pdf.numPages, 5); 
+    for (let i = 1; i <= numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const strings = content.items.map((item: any) => item.str);
+      text += strings.join(' ') + '\n';
+    }
+    return text.trim();
+  } catch (error) {
+    console.error("PDF Extraction error:", error);
+    return "";
+  }
+};
+
 export async function parseResume(fileBase64: string, mimeType: string): Promise<ParsedCandidate | null> {
   try {
+    let textToParse = "";
+
+    // If it's a PDF, extract text directly to make it incredibly fast
+    if (mimeType === 'application/pdf') {
+      textToParse = await extractTextFromPDF(fileBase64);
+    }
+
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     
-    // Switch to lite tier (lifetime free/high availability option)
+    // Switch to lite tier for fastest performance
+    
+    // If we extracted text, send text directly. Otherwise, send the document blob as fallback.
+    const parts: any[] = [];
+    if (textToParse.length > 50) {
+      parts.push({ text: `Extract candidate information from this resume text:\n\n${textToParse}` });
+    } else {
+      parts.push({
+        inlineData: {
+          data: fileBase64,
+          mimeType: mimeType,
+        },
+      });
+      parts.push({ text: "Extract candidate information from this resume document." });
+    }
+
+    parts.push({ text: "Return the data in JSON format following the provided schema. If a field is not found, return an empty string." });
+
     const response = await ai.models.generateContent({
       model: "gemini-3.1-flash-lite-preview",
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              data: fileBase64,
-              mimeType: mimeType,
-            },
-          },
-          {
-            text: "Extract candidate information from this resume. Return the data in JSON format following the provided schema. If a field is not found, return an empty string.",
-          },
-        ],
-      },
+      contents: { parts },
       config: {
         responseMimeType: "application/json",
         responseSchema: {
