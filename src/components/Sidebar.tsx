@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   LayoutDashboard, 
   Trello, 
@@ -155,27 +156,33 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentHash, isOpen, setIsOpen
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+        <nav className="flex-1 px-3 py-6 space-y-1.5 overflow-y-auto">
           {navItems.filter(item => item.visible).map(item => (
             <a
               key={item.hash}
               href={item.hash}
               onClick={() => setIsOpen(false)}
               className={cn(
-                "flex items-center gap-3 px-4 py-3 rounded-xl transition-all group relative",
+                "flex items-center gap-3 px-4 py-3 rounded-xl transition-all group relative font-semibold",
                 currentHash.startsWith(item.hash) 
-                  ? "bg-accent-blue/10 text-accent-blue" 
+                  ? "bg-accent-blue/10 text-accent-blue shadow-inner" 
                   : "text-text-secondary hover:bg-bg-tertiary hover:text-text-primary"
               )}
             >
               {currentHash.startsWith(item.hash) && (
-                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-accent-blue rounded-r-full" />
+                <motion.div 
+                  layoutId="activeNavIndicator"
+                  className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-accent-blue rounded-r-full shadow-[0_0_8px_rgba(0,173,140,0.5)]" 
+                />
               )}
-              <item.icon className="w-5 h-5" />
-              <span className="font-medium flex-1">{item.label}</span>
+              <item.icon className={cn(
+                "w-5 h-5 transition-transform duration-300",
+                currentHash.startsWith(item.hash) ? "scale-110" : "group-hover:scale-110 group-hover:text-text-primary"
+              )} />
+              <span className="flex-1">{item.label}</span>
               {item.badge !== undefined && item.badge > 0 && (
                 <span className={cn(
-                  "px-2 py-0.5 rounded-full text-[10px] font-bold",
+                  "px-2 py-0.5 rounded-full text-[10px] font-bold shadow-sm",
                   item.hash === '#not-interested' ? "bg-accent-red/20 text-accent-red" : "bg-accent-amber/20 text-accent-amber"
                 )}>
                   {item.badge}
@@ -186,30 +193,44 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentHash, isOpen, setIsOpen
         </nav>
 
         {/* Footer */}
-        <div className="p-4 border-t border-border-primary space-y-4">
+        <div className="p-5 border-t border-border-primary bg-bg-secondary/50 backdrop-blur-sm space-y-4">
           <button
             onClick={toggleTheme}
-            className="w-full flex items-center gap-3 px-4 py-2 rounded-xl text-text-secondary hover:bg-bg-tertiary transition-colors"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-text-secondary bg-bg-tertiary hover:bg-border-primary hover:text-text-primary transition-all font-semibold text-sm shadow-sm"
           >
-            {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-            <span className="font-medium">Switch to {theme === 'dark' ? 'Light' : 'Dark'}</span>
+            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
           </button>
 
-          <div className="flex items-center gap-3 px-2">
-            <div className="w-10 h-10 rounded-full bg-accent-purple/20 text-accent-purple flex items-center justify-center font-bold text-lg">
+          <div className="flex items-center gap-3 px-1 flex-wrap">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-accent-purple/30 to-accent-blue/30 text-accent-purple flex items-center justify-center font-bold text-lg shadow-inner ring-1 ring-white/10">
               {user?.display_name.charAt(0)}
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-bold text-text-primary truncate">{user?.display_name}</p>
-              <button 
-                onClick={logout}
-                className="text-xs text-text-muted hover:text-accent-red transition-colors flex items-center gap-1"
-              >
-                <LogOut className="w-3 h-3" />
-                Sign out
-              </button>
+              <div className="text-[9px] uppercase tracking-wider font-bold text-white bg-accent-blue/80 ring-1 ring-accent-blue shadow-[0_2px_4px_rgba(0,173,140,0.2)] inline-block px-2 py-0.5 rounded-md mt-1 whitespace-normal leading-tight">
+                 {user?.role === 'administrator' ? 'Administrator' : 
+                  user?.role === 'jpc_sysadmin' ? 'System Admin' :
+                  user?.role === 'jpc_manager' ? 'Placify Manager' :
+                  user?.role === 'jpc_lead_gen' ? 'Lead Gen' :
+                  user?.role === 'jpc_sales' ? 'Sales Team' :
+                  user?.role === 'jpc_cs' ? 'Customer Success' :
+                  user?.role === 'jpc_resume' ? 'Resume Team' :
+                  user?.role === 'jpc_recruiter' ? 'Recruiter' :
+                  user?.role === 'jpc_marketing' ? 'Marketing Leader (TL)' :
+                  user?.role === 'jpc_marketing_support' ? 'Marketing Support' :
+                  user?.role === 'jpc_proxy' ? 'Proxy Team' :
+                  user?.role === 'candidate' || user?.role === 'jpc_candidate' ? 'Candidate' : ''}
+              </div>
             </div>
           </div>
+          <button 
+            onClick={logout}
+            className="w-full text-xs text-center justify-center text-text-secondary hover:text-white hover:bg-accent-red py-2.5 rounded-xl transition-all flex items-center gap-2 font-bold group"
+          >
+            <LogOut className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+            Sign Out
+          </button>
 
           <div className="pt-4 border-t border-border-primary flex flex-col items-center gap-2">
             <p className="text-[8px] font-bold text-text-muted uppercase tracking-widest">Powered by</p>

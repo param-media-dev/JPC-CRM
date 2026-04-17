@@ -63,7 +63,7 @@ export const LoginPage: React.FC = () => {
           <motion.div 
             initial={{ scale: 0.5, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="flex items-center justify-center mx-auto mb-6"
+            className="flex flex-row items-center justify-center gap-6 mx-auto mb-6"
           >
             <img 
               src={theme === 'dark' 
@@ -71,9 +71,22 @@ export const LoginPage: React.FC = () => {
                 : "https://test-wp.param.club/wp-content/uploads/2026/04/Asset-4@4x-scaled.webp"
               } 
               alt="Placify Logo" 
-              className="h-24 w-auto"
+              className="h-20 w-auto"
               referrerPolicy="no-referrer"
             />
+            <div className="w-px h-16 bg-border-primary hidden sm:block"></div>
+            <div className="flex flex-col items-start justify-center">
+              <span className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1.5 ml-1">Powered by</span>
+              <img 
+                src={theme === 'dark' 
+                  ? "https://test-wp.param.club/wp-content/uploads/2026/04/Asset-1@4x.webp" 
+                  : "https://test-wp.param.club/wp-content/uploads/2026/04/Auriic_Logo-_1_-1.webp"
+                } 
+                alt="Auriic Logo" 
+                className="h-12 w-auto opacity-90"
+                referrerPolicy="no-referrer"
+              />
+            </div>
           </motion.div>
           <motion.h1 
             initial={{ y: 20, opacity: 0 }}
@@ -204,18 +217,6 @@ export const LoginPage: React.FC = () => {
           <p className="text-sm text-text-muted">
             Authorized Personnel Only
           </p>
-          <div className="mt-8 flex flex-col items-center gap-2">
-            <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Powered by</p>
-            <img 
-              src={theme === 'dark' 
-                ? "https://test-wp.param.club/wp-content/uploads/2026/04/Asset-1@4x.webp" 
-                : "https://test-wp.param.club/wp-content/uploads/2026/04/Auriic_Logo-_1_-1.webp"
-              } 
-              alt="Auriic Logo" 
-              className="h-6 w-auto opacity-50"
-              referrerPolicy="no-referrer"
-            />
-          </div>
         </motion.div>
       </div>
     </div>

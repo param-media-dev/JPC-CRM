@@ -132,22 +132,28 @@ const AppContent: React.FC = () => {
         />
       )}
       
-      <main className={`flex-1 flex flex-col min-h-screen ${!isReceiptPage ? 'md:ml-[260px]' : ''}`}>
+      <main className={`flex-1 flex flex-col min-h-screen transition-all duration-300 ${!isReceiptPage ? 'md:ml-[260px]' : ''}`}>
         {!isReceiptPage && (
-          <header className="h-16 border-b border-border-primary bg-bg-secondary/50 backdrop-blur-md sticky top-0 z-30 px-6 flex items-center justify-between">
-            <button 
-              className="md:hidden p-2 text-text-secondary hover:bg-bg-tertiary rounded-lg transition-colors"
-              onClick={() => setIsSidebarOpen(true)}
-            >
-              <Menu className="w-6 h-6" />
-            </button>
+          <header className="h-20 border-b border-border-primary bg-bg-primary/80 backdrop-blur-xl sticky top-0 z-30 px-6 flex items-center justify-between shadow-sm">
+            <div className="flex items-center gap-4">
+              <button 
+                className="md:hidden p-2.5 text-text-secondary bg-bg-secondary hover:text-text-primary hover:bg-bg-tertiary rounded-xl transition-all shadow-sm ring-1 ring-border-primary"
+                onClick={() => setIsSidebarOpen(true)}
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+              <div className="hidden md:block">
+                <h2 className="text-xl font-bold font-heading text-text-primary tracking-tight">Welcome back!</h2>
+                <p className="text-xs text-text-secondary font-medium">Ready to place some great candidates?</p>
+              </div>
+            </div>
             
             <div className="flex items-center gap-4 ml-auto">
               <NotificationList />
               {user?.role !== 'candidate' && (
                 <button 
                   onClick={() => setIsAddModalOpen(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-accent-blue text-white font-bold rounded-xl hover:bg-accent-blue/90 transition-all shadow-lg shadow-accent-blue/20"
+                  className="flex items-center gap-2 px-4 py-2.5 bg-accent-blue text-white font-bold rounded-xl hover:bg-accent-blue/90 hover:-translate-y-0.5 transition-all shadow-[0_4px_12px_rgba(0,173,140,0.3)] ring-1 ring-white/10"
                 >
                   <Plus className="w-5 h-5" />
                   <span className="hidden sm:inline">Add Candidate</span>
