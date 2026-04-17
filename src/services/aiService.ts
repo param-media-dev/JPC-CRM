@@ -22,8 +22,9 @@ export async function parseResume(fileBase64: string, mimeType: string): Promise
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     
+    // Switch to lite tier (lifetime free/high availability option)
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-3.1-flash-lite-preview",
       contents: {
         parts: [
           {
