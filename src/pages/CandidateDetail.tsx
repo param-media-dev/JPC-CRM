@@ -778,6 +778,27 @@ export const CandidateDetail: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {(user?.role === 'jpc_sales' && !candidate.trashed_at) && (
+            <button 
+              onClick={async () => {
+                if (window.confirm("Marking this candidate as Not Eligible will send them to Trash. They will be permanently deleted after 30 days. Proceed?")) {
+                  const updated = { 
+                    ...candidate,
+                    trashed_at: new Date().toISOString()
+                  };
+                  await saveCandidate(updated, user?.id || null);
+                  showToast('Candidate sent to Trash (Not Eligible)', 'success');
+                  window.location.hash = '#candidates';
+                }
+              }}
+              className="px-4 py-2 rounded-xl border border-accent-red/20 bg-accent-red/5 flex items-center gap-2 text-accent-red hover:bg-accent-red/10 transition-all shadow-sm"
+              title="Mark as Not Eligible (Send to Trash)"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span className="text-xs font-bold uppercase tracking-wider">Not Eligible</span>
+            </button>
+          )}
+
           {user?.role === 'administrator' && (
             <button 
               onClick={async () => {

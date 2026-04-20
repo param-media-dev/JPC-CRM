@@ -24,6 +24,8 @@ export const Pipeline: React.FC = () => {
 
   const filteredCandidates = useMemo(() => {
     return candidates.filter(c => {
+      if (c.trashed_at) return false;
+      
       const matchesSearch = c.full_name.toLowerCase().includes(search.toLowerCase()) ||
         c.phone.includes(search) ||
         c.email.toLowerCase().includes(search.toLowerCase());

@@ -53,6 +53,8 @@ export const Candidates: React.FC = () => {
 
   const filteredCandidates = useMemo(() => {
     return candidates.filter(c => {
+      if (c.trashed_at) return false;
+
       // Lead Gen can only see their own leads
       if (user?.role === 'jpc_lead_gen' && String(c.lead_generated_by) !== String(user?.id)) return false;
 
