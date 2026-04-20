@@ -21,6 +21,40 @@ export const Dashboard: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  const [currentTime, setCurrentTime] = useState('');
+  const [motivationalQuote, setMotivationalQuote] = useState('');
+
+  const quotes = useMemo(() => [
+    "Success usually comes to those who are too busy to be looking for it.",
+    "Don't limit your challenges. Challenge your limits.",
+    "The secret of getting ahead is getting started.",
+    "Great things never come from comfort zones.",
+    "Dream big and dare to fail.",
+    "It always seems impossible until it's done.",
+    "Your limitation—it's only your imagination.",
+    "Push yourself, because no one else is going to do it for you.",
+    "Sometimes later becomes never. Do it now.",
+    "Hard work beats talent when talent doesn't work hard."
+  ], []);
+
+  useEffect(() => {
+    setMotivationalQuote(quotes[Math.floor(Math.random() * quotes.length)]);
+    
+    const updateTime = () => {
+      const timeFormatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      });
+      setCurrentTime(timeFormatter.format(new Date()));
+    };
+
+    updateTime();
+    const interval = setInterval(updateTime, 1000);
+    return () => clearInterval(interval);
+  }, [quotes]);
 
   useEffect(() => {
     if (!isAuthReady) return;
@@ -213,9 +247,15 @@ export const Dashboard: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-3xl font-bold text-text-primary tracking-tight">Welcome back, {user?.display_name}!</h1>
-          <p className="text-text-secondary mt-1">Here's what's happening with your pipeline today.</p>
+          <p className="text-text-secondary mt-1">{motivationalQuote}</p>
         </div>
         <div className="flex items-center gap-3">
+          <div className="px-4 py-2 bg-bg-secondary border border-border-primary rounded-xl flex items-center gap-2">
+            <Clock className="w-4 h-4 text-accent-blue" />
+            <span className="text-sm font-bold text-text-primary tracking-wider">
+              US Time (EST): {currentTime}
+            </span>
+          </div>
           <div className="px-4 py-2 bg-bg-secondary border border-border-primary rounded-xl flex items-center gap-2">
             <span className="w-2 h-2 bg-accent-green rounded-full animate-pulse" />
             <span className="text-sm font-bold text-text-primary uppercase tracking-wider">System Live</span>
