@@ -42,14 +42,24 @@ export const LoginPage: React.FC = () => {
     } catch (error: any) {
       console.warn('Auth error:', error.message);
       let message = 'Failed to authenticate. Please try again.';
-      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
-        message = 'Invalid email or password. If you haven\'t created an account yet, please Sign Up first.';
-      }
-      if (error.code === 'auth/email-already-in-use') {
+      
+      const errorCode = error.code;
+      const errorMessage = error.message || '';
+
+      if (errorCode === 'auth/user-not-found' || errorMessage.includes('user-not-found') || errorMessage.includes('User not found')) {
+        message = 'No account found with this email. Please check your email or create an account below.';
+      } else if (errorCode === 'auth/wrong-password' || errorCode === 'auth/invalid-credential' || errorMessage.includes('wrong-password') || errorMessage.includes('invalid-credential')) {
+        message = 'Invalid email or password. Please try again.';
+      } else if (errorCode === 'auth/email-already-in-use' || errorMessage.includes('email-already-in-use')) {
         message = 'This email is already registered. Please Sign In instead.';
+      } else if (errorCode === 'auth/weak-password' || errorMessage.includes('weak-password')) {
+        message = 'Password should be at least 6 characters.';
+      } else if (errorCode === 'auth/invalid-email' || errorMessage.includes('invalid-email')) {
+        message = 'Invalid email format.';
+      } else if (errorCode === 'auth/too-many-requests' || errorMessage.includes('too-many-requests')) {
+        message = 'Too many failed login attempts. Please try again later or reset your password.';
       }
-      if (error.code === 'auth/weak-password') message = 'Password should be at least 6 characters.';
-      if (error.code === 'auth/invalid-email') message = 'Invalid email format.';
+      
       showToast(message, 'error');
     } finally {
       setIsLoading(false);
@@ -194,8 +204,8 @@ export const LoginPage: React.FC = () => {
               )}
             </button>
 
-            <div className="text-center space-y-2">
-              {isResetting && (
+            <div className="text-center space-y-4">
+              {isResetting ? (
                 <button 
                   type="button"
                   onClick={() => setIsResetting(false)}
@@ -203,6 +213,19 @@ export const LoginPage: React.FC = () => {
                 >
                   Back to Sign In
                 </button>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setIsSignup(!isSignup);
+                      setFormData({ email: '', password: '', displayName: '' });
+                    }}
+                    className="text-sm font-medium text-accent-blue hover:underline"
+                  >
+                    {isSignup ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
+                  </button>
+                </div>
               )}
             </div>
           </form>

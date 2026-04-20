@@ -100,7 +100,7 @@ export const Dashboard: React.FC = () => {
   }, [isAuthReady, user]);
 
   const activeCandidates = useMemo(() => {
-    let filtered = candidates.filter(c => c.current_stage !== 'not_interested' && c.current_stage !== 'completed' && !c.trashed_at);
+    let filtered = candidates.filter(c => c.current_stage !== 'not_interested' && c.current_stage !== 'completed');
     if (user?.role === 'jpc_recruiter') {
       filtered = filtered.filter(c => String(c.assigned_recruiter) === String(user.id));
     } else if (user?.role === 'jpc_lead_gen') {
@@ -112,7 +112,7 @@ export const Dashboard: React.FC = () => {
   }, [candidates, user]);
 
   const completedCount = useMemo(() => {
-    let filtered = candidates.filter(c => c.current_stage === 'completed' && !c.trashed_at);
+    let filtered = candidates.filter(c => c.current_stage === 'completed');
     if (user?.role === 'jpc_recruiter') {
       filtered = filtered.filter(c => String(c.assigned_recruiter) === String(user.id));
     } else if (user?.role === 'jpc_lead_gen') {
@@ -124,7 +124,7 @@ export const Dashboard: React.FC = () => {
   }, [candidates, user]);
 
   const notInterestedCount = useMemo(() => {
-    let filtered = candidates.filter(c => c.current_stage === 'not_interested' && !c.trashed_at);
+    let filtered = candidates.filter(c => c.current_stage === 'not_interested');
     if (user?.role === 'jpc_recruiter') {
       filtered = filtered.filter(c => String(c.assigned_recruiter) === String(user.id));
     } else if (user?.role === 'jpc_lead_gen') {

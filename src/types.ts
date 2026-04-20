@@ -91,7 +91,6 @@ export interface Candidate {
   flags: CandidateFlags;
   profiles_count?: number;
   not_interested_at: string | null;
-  trashed_at?: string | null;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;

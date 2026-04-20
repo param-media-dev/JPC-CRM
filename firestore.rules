@@ -35,7 +35,9 @@ service cloud.firestore {
 
     match /jpc_users/{userId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow update: if request.auth.uid == userId || isAdmin();
+      allow delete: if isAdmin();
     }
 
     match /jpc_resume_requests/{requestId} {

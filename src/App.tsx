@@ -11,7 +11,6 @@ import { Candidates } from './pages/Candidates';
 import { CandidateDetail } from './pages/CandidateDetail';
 import { FollowUps } from './pages/FollowUps';
 import { NotInterested } from './pages/NotInterested';
-import { Trash } from './pages/Trash';
 import { Team } from './pages/Team';
 import { Receipt } from './pages/Receipt';
 import { AppTracker } from './pages/AppTracker';
@@ -103,9 +102,6 @@ const AppContent: React.FC = () => {
       case '#not-interested': 
         if (user?.role !== 'administrator' && user?.role !== 'jpc_sysadmin' && user?.role !== 'jpc_manager') return <Dashboard />;
         return <NotInterested />;
-      case '#trash': 
-        if (user?.role !== 'administrator' && user?.role !== 'jpc_sysadmin' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_sales') return <Dashboard />;
-        return <Trash />;
       case '#team': 
         if (user?.role !== 'administrator' && user?.role !== 'jpc_sysadmin' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_marketing') return <Dashboard />;
         return <Team />;

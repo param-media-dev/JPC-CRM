@@ -17,8 +17,7 @@ import {
   FileText,
   FileEdit,
   Video,
-  User as UserIcon,
-  Trash2
+  User as UserIcon
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { subscribeToCollection } from '../services/storage';
@@ -63,7 +62,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentHash, isOpen, setIsOpen
   }, [user, allFollowUps]);
 
   const notInterestedCount = useMemo(() => {
-    return allCandidates.filter(c => c.current_stage === 'not_interested' && !c.trashed_at).length;
+    return allCandidates.filter(c => c.current_stage === 'not_interested').length;
   }, [allCandidates]);
 
   const navItems = [
@@ -107,12 +106,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentHash, isOpen, setIsOpen
       icon: UserX, 
       visible: (user?.role === 'administrator' || user?.role === 'jpc_manager' || user?.role === 'jpc_sysadmin'),
       badge: notInterestedCount
-    },
-    { 
-      label: 'Trash', 
-      hash: '#trash', 
-      icon: Trash2, 
-      visible: (user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_sales')
     },
     { 
       label: 'Team', 
