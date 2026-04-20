@@ -13,7 +13,8 @@ import {
   addFollowUp,
   updateFollowUp,
   getUserById,
-  now
+  now,
+  deleteCandidate
 } from '../services/storage';
 import { uploadFile } from '../services/fileService';
 import { useAuth } from '../contexts/AuthContext';
@@ -55,7 +56,8 @@ import {
   Key,
   Copy,
   Check,
-  Image
+  Image,
+  Trash2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -585,7 +587,11 @@ export const CandidateDetail: React.FC = () => {
     const updated = { 
       ...candidate, 
       current_stage: newStage,
-      not_interested_at: newStage === 'not_interested' ? now() : null
+      not_interested_at: newStage === 'not_interested' ? now() : null,
+      flags: {
+        ...(candidate.flags || {}),
+        sla_timeout_notified: false
+      }
     };
     
     await saveCandidate(updated, user?.id || null);
@@ -772,6 +778,47 @@ export const CandidateDetail: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {user?.role === 'administrator' && (
+            <button 
+              onClick={async () => {
+                if (window.confirm("CRITICAL WARNING: This will permanently delete this candidate and all associated data (interviews, payments, etc.). Are you absolutely sure?")) {
+                  try {
+                    await deleteCandidate(candidate.id);
+                    showToast('Candidate completely deleted', 'success');
+                    window.location.hash = '#candidates';
+                  } catch (err) {
+                    showToast('Error deleting candidate', 'error');
+                  }
+                }
+              }}
+              className="px-4 py-2 rounded-xl border border-accent-red/20 bg-accent-red/5 flex items-center gap-2 text-accent-red hover:bg-accent-red/10 transition-all shadow-sm"
+              title="Delete candidate completely"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span className="text-xs font-bold uppercase tracking-wider">Delete</span>
+            </button>
+          )}
+          {(user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager') && (
+            <button 
+              onClick={async () => {
+                const updated = { 
+                  ...candidate,
+                  updated_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+                  flags: {
+                    ...(candidate.flags || {}),
+                    sla_timeout_notified: false
+                  }
+                };
+                await saveCandidate(updated, user?.id || null);
+                showToast('Time limit simulated! SLA Monitor will trigger within 60 seconds.', 'success');
+              }}
+              className="px-4 py-2 rounded-xl border border-accent-purple/20 bg-accent-purple/5 flex items-center gap-2 text-accent-purple hover:bg-accent-purple/10 transition-all shadow-sm"
+              title="Test the 2.5 hour SLA Warning system"
+            >
+              <Clock className="w-4 h-4" />
+              <span className="text-xs font-bold uppercase tracking-wider">Test SLA Timeout</span>
+            </button>
+          )}
           {hasPortal ? (
             <div className="px-4 py-2 rounded-xl border border-accent-green/20 bg-accent-green/5 flex items-center gap-2 text-accent-green">
               <ShieldCheck className="w-4 h-4" />

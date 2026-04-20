@@ -10,7 +10,8 @@ import {
   where, 
   orderBy, 
   onSnapshot,
-  getDocFromServer
+  getDocFromServer,
+  writeBatch
 } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { Candidate, Payment, Promise as PromiseType, QCChecklistItem, FollowUp, ActivityLog, User, Stage, InterviewRequest, Notification as AppNotification } from '../types';
@@ -180,7 +181,31 @@ export const getCandidateById = async (id: string): Promise<Candidate | null> =>
 
 export const deleteCandidate = async (id: string) => {
   try {
-    await deleteDoc(doc(db, 'jpc_candidates', id));
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'jpc_candidates', id));
+    
+    const collectionsWithCandidateId = [
+      'jpc_payments',
+      'jpc_promises',
+      'jpc_qc_checklist',
+      'jpc_followups',
+      'jpc_activity_logs',
+      'jpc_applications',
+      'jpc_resume_requests',
+      'jpc_interviews',
+      'jpc_users',
+      'jpc_report_logs'
+    ];
+
+    for (const collName of collectionsWithCandidateId) {
+      const q = query(collection(db, collName), where('candidate_id', '==', id));
+      const snapshot = await getDocs(q);
+      snapshot.forEach(d => {
+        batch.delete(d.ref);
+      });
+    }
+
+    await batch.commit();
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, `jpc_candidates/${id}`);
   }

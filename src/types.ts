@@ -54,6 +54,7 @@ export interface CandidateFlags {
   two_step_verification: boolean;
   linkedin_optimized: boolean;
   marketing_started: boolean;
+  sla_timeout_notified?: boolean;
 }
 
 export interface Candidate {

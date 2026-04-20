@@ -18,6 +18,7 @@ import { ResumeLogBook } from './pages/ResumeLogBook';
 import { InterviewSupport } from './pages/InterviewSupport';
 import { AddCandidateModal } from './components/AddCandidateModal';
 import { NotificationList } from './components/NotificationList';
+import { SLAMonitor } from './components/SLAMonitor';
 import { seedData } from './services/seeding';
 import { migrateAllChecklists, testConnection } from './services/storage';
 import { Plus, Menu } from 'lucide-react';
@@ -168,6 +169,7 @@ const AppContent: React.FC = () => {
         </div>
       </main>
 
+      <SLAMonitor />
       <AddCandidateModal 
         isOpen={isAddModalOpen} 
         onClose={() => setIsAddModalOpen(false)}
