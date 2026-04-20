@@ -1,14 +1,13 @@
 {
-  "name": "react-example",
+  "name": "application-tracker",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "npm run clean && vite build && esbuild server.ts --bundle --platform=node --format=esm --outfile=dist/server.js --packages=external",
-    "start": "node dist/server.js",
+    "build": "vite build",
+    "start": "tsx server.ts",
     "preview": "vite preview",
-    "clean": "rm -rf dist build",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
