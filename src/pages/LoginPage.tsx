@@ -29,38 +29,19 @@ export const LoginPage: React.FC = () => {
     setIsLoading(true);
     try {
       if (isResetting) {
-        await resetPassword(formData.email);
-        showToast('Password reset email sent! Please check your inbox.', 'success');
+        showToast('Password reset is managed by the system administrator.', 'info');
         setIsResetting(false);
       } else if (isSignup) {
-        await signup(formData.email, formData.password, formData.displayName);
-        showToast('Account created successfully!', 'success');
+        showToast('Signup is restricted. Please contact the administrator for access.', 'info');
       } else {
+        // Use email as username for the WP login endpoint if necessary, 
+        // or just pass as username assuming the API handles it.
         await login(formData.email, formData.password);
         showToast('Successfully logged in!', 'success');
       }
     } catch (error: any) {
       console.warn('Auth error:', error.message);
-      let message = 'Failed to authenticate. Please try again.';
-      
-      const errorCode = error.code;
-      const errorMessage = error.message || '';
-
-      if (errorCode === 'auth/user-not-found' || errorMessage.includes('user-not-found') || errorMessage.includes('User not found')) {
-        message = 'No account found with this email. Please check your email or create an account below.';
-      } else if (errorCode === 'auth/wrong-password' || errorCode === 'auth/invalid-credential' || errorMessage.includes('wrong-password') || errorMessage.includes('invalid-credential')) {
-        message = 'Invalid email or password. Please try again.';
-      } else if (errorCode === 'auth/email-already-in-use' || errorMessage.includes('email-already-in-use')) {
-        message = 'This email is already registered. Please Sign In instead.';
-      } else if (errorCode === 'auth/weak-password' || errorMessage.includes('weak-password')) {
-        message = 'Password should be at least 6 characters.';
-      } else if (errorCode === 'auth/invalid-email' || errorMessage.includes('invalid-email')) {
-        message = 'Invalid email format.';
-      } else if (errorCode === 'auth/too-many-requests' || errorMessage.includes('too-many-requests')) {
-        message = 'Too many failed login attempts. Please try again later or reset your password.';
-      }
-      
-      showToast(message, 'error');
+      showToast(error.message || 'Failed to authenticate. Please check your credentials.', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -146,11 +127,11 @@ export const LoginPage: React.FC = () => {
               )}
 
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-text-muted uppercase tracking-widest">Email Address</label>
+                <label className="text-xs font-bold text-text-muted uppercase tracking-widest">Username or Email</label>
                 <div className="relative">
                   <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-text-muted" />
                   <input 
-                    type="email" 
+                    type="text" 
                     required
                     value={formData.email}
                     onChange={e => setFormData({...formData, email: e.target.value})}
@@ -204,8 +185,8 @@ export const LoginPage: React.FC = () => {
               )}
             </button>
 
-            <div className="text-center space-y-4">
-              {isResetting ? (
+            <div className="text-center space-y-2">
+              {isResetting && (
                 <button 
                   type="button"
                   onClick={() => setIsResetting(false)}
@@ -213,19 +194,6 @@ export const LoginPage: React.FC = () => {
                 >
                   Back to Sign In
                 </button>
-              ) : (
-                <div className="flex flex-col gap-2">
-                  <button 
-                    type="button"
-                    onClick={() => {
-                      setIsSignup(!isSignup);
-                      setFormData({ email: '', password: '', displayName: '' });
-                    }}
-                    className="text-sm font-medium text-accent-blue hover:underline"
-                  >
-                    {isSignup ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
-                  </button>
-                </div>
               )}
             </div>
           </form>

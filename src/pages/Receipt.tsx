@@ -3,8 +3,7 @@ import { getCandidateById, getUserById, subscribeToCollection } from '../service
 import { Payment, Candidate, User } from '../types';
 import { Printer, ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { doc, getDoc, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase';
+import { apiService } from '../services/apiService';
 
 export const Receipt: React.FC = () => {
   const { isAuthReady } = useAuth();
@@ -20,30 +19,31 @@ export const Receipt: React.FC = () => {
   useEffect(() => {
     if (!isAuthReady || !payId || !candId) return;
 
-    const unsubPayment = onSnapshot(doc(db, 'jpc_payments', String(payId)), async (snap) => {
-      if (snap.exists()) {
-        const pData = snap.data() as Payment;
-        setPayment(pData);
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        const [cand, payments] = await Promise.all([
+          apiService.getCandidate(candId),
+          apiService.getPayments({ candidate_id: candId })
+        ]);
         
-        // Fetch creator
-        if (pData.created_by) {
-          const uSnap = await getDoc(doc(db, 'jpc_users', String(pData.created_by)));
-          if (uSnap.exists()) setCreator(uSnap.data() as User);
+        setCandidate(cand);
+        const pData = (payments as any[]).find(p => String(p.id) === String(payId));
+        if (pData) {
+          setPayment(pData);
+          if (pData.created_by) {
+            const userData = await apiService.getUser(pData.created_by);
+            setCreator(userData);
+          }
         }
+      } catch (error) {
+        console.error('Failed to fetch receipt data:', error);
+      } finally {
+        setIsLoading(false);
       }
-    });
-
-    const unsubCandidate = onSnapshot(doc(db, 'jpc_candidates', String(candId)), (snap) => {
-      if (snap.exists()) {
-        setCandidate(snap.data() as Candidate);
-      }
-      setIsLoading(false);
-    });
-
-    return () => {
-      unsubPayment();
-      unsubCandidate();
     };
+
+    fetchData();
   }, [isAuthReady, payId, candId]);
 
   if (isLoading) {

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { subscribeToCollection } from '../services/storage';
+import { useData } from '../contexts/DataContext';
 import { STAGES } from '../constants';
 import { Search, Filter, X, Package, Phone, Mail, MapPin, Calendar, Users, ChevronRight, MoreVertical, ShieldCheck, Plus, Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -8,13 +8,14 @@ import { cn } from '../lib/utils';
 import { Candidate, Stage, User, Application } from '../types';
 import { CandidateSheet } from '../components/CandidateSheet';
 import { TrackJobSheet } from '../components/TrackJobSheet';
+import { getUsers } from '../services/storage';
 
 export const Candidates: React.FC = () => {
-  const { user, isAuthReady } = useAuth();
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const { user } = useAuth();
+  const { candidates: allCandidates, applications, isLoading } = useData();
   const [allUsers, setAllUsers] = useState<User[]>([]);
-  const [applications, setApplications] = useState<Application[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  
+  const candidates = useMemo(() => allCandidates.filter(c => c.current_stage !== 'not_interested'), [allCandidates]);
   const [search, setSearch] = useState('');
   const [stageFilter, setStageFilter] = useState('');
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
@@ -23,26 +24,8 @@ export const Candidates: React.FC = () => {
   const [isTrackSheetOpen, setIsTrackSheetOpen] = useState(false);
   
   useEffect(() => {
-    if (!isAuthReady) return;
-    const unsub = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
-      setCandidates(data.filter(c => c.current_stage !== 'not_interested'));
-      setIsLoading(false);
-    });
-
-    const unsubUsers = subscribeToCollection<User>('jpc_users', (data) => {
-      setAllUsers(data);
-    });
-
-    const unsubApps = subscribeToCollection<Application>('jpc_applications', (data) => {
-      setApplications(data);
-    });
-
-    return () => {
-      unsub();
-      unsubUsers();
-      unsubApps();
-    };
-  }, [isAuthReady]);
+    getUsers().then(setAllUsers);
+  }, []);
 
   // Get stage from URL if present
   useEffect(() => {

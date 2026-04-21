@@ -1,24 +1,26 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { subscribeToCollection, subscribeToQuery, markNotificationAsRead } from '../services/storage';
+import { useData } from '../contexts/DataContext';
+import { markNotificationAsRead } from '../services/storage';
 import { STAGES } from '../constants';
 import { Users, CheckCircle2, Clock, UserX, ArrowRight, LayoutGrid, Phone, Calendar, ArrowUpRight, AlertCircle, ChevronRight, FileEdit, Video, TrendingUp, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { Candidate, FollowUp, Notification, ResumeChangeRequest, InterviewRequest, Application } from '../types';
 import { CandidateSheet } from '../components/CandidateSheet';
-import { db } from '../firebase';
-import { query, collection, where } from 'firebase/firestore';
 
 export const Dashboard: React.FC = () => {
-  const { user, isAuthReady } = useAuth();
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [followUps, setFollowUps] = useState<FollowUp[]>([]);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [resumeRequests, setResumeRequests] = useState<ResumeChangeRequest[]>([]);
-  const [interviews, setInterviews] = useState<InterviewRequest[]>([]);
-  const [applications, setApplications] = useState<Application[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { user } = useAuth();
+  const { 
+    candidates, 
+    followUps, 
+    notifications, 
+    resumeRequests, 
+    interviews, 
+    applications, 
+    isLoading 
+  } = useData();
+  
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState('');
@@ -55,49 +57,6 @@ export const Dashboard: React.FC = () => {
     const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
   }, [quotes]);
-
-  useEffect(() => {
-    if (!isAuthReady) return;
-
-    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
-      setCandidates(data);
-      setIsLoading(false);
-    });
-
-    const unsubFollowUps = subscribeToCollection<FollowUp>('jpc_followups', (data) => {
-      setFollowUps(data);
-    });
-
-    let unsubNotifications = () => {};
-    if (user) {
-      const q = query(
-        collection(db, 'jpc_notifications'),
-        where('recipient_id', '==', String(user.id))
-      );
-      unsubNotifications = subscribeToQuery<Notification>(q, setNotifications, 'jpc_notifications');
-    }
-
-    const unsubResumeRequests = subscribeToCollection<ResumeChangeRequest>('jpc_resume_requests', (data) => {
-      setResumeRequests(data);
-    });
-
-    const unsubInterviews = subscribeToCollection<InterviewRequest>('jpc_interviews', (data) => {
-      setInterviews(data);
-    });
-
-    const unsubApps = subscribeToCollection<Application>('jpc_applications', (data) => {
-      setApplications(data);
-    });
-
-    return () => {
-      unsubCandidates();
-      unsubFollowUps();
-      unsubNotifications();
-      unsubResumeRequests();
-      unsubInterviews();
-      unsubApps();
-    };
-  }, [isAuthReady, user]);
 
   const activeCandidates = useMemo(() => {
     let filtered = candidates.filter(c => c.current_stage !== 'not_interested' && c.current_stage !== 'completed');

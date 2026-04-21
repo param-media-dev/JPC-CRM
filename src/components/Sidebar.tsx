@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { useData } from '../contexts/DataContext';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   LayoutDashboard, 
@@ -17,11 +18,10 @@ import {
   FileText,
   FileEdit,
   Video,
-  User as UserIcon
+  User as UserIcon,
+  Download
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { subscribeToCollection } from '../services/storage';
-import { FollowUp, Candidate } from '../types';
 
 interface SidebarProps {
   currentHash: string;
@@ -30,28 +30,9 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentHash, isOpen, setIsOpen }) => {
-  const { user, logout, isAuthReady } = useAuth();
+  const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
-
-  const [allFollowUps, setAllFollowUps] = useState<FollowUp[]>([]);
-  const [allCandidates, setAllCandidates] = useState<Candidate[]>([]);
-
-  useEffect(() => {
-    if (!isAuthReady) return;
-
-    const unsubFollowUps = subscribeToCollection<FollowUp>('jpc_followups', (data) => {
-      setAllFollowUps(data);
-    });
-
-    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
-      setAllCandidates(data);
-    });
-
-    return () => {
-      unsubFollowUps();
-      unsubCandidates();
-    };
-  }, [isAuthReady]);
+  const { candidates: allCandidates, followUps: allFollowUps, exportData } = useData();
 
   const followUpsCount = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
@@ -200,6 +181,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentHash, isOpen, setIsOpen
           >
             {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+          </button>
+
+          <button
+            onClick={exportData}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-accent-blue bg-accent-blue/10 hover:bg-accent-blue/20 transition-all font-bold text-xs shadow-sm ring-1 ring-accent-blue/20"
+            title="Download all cached data as JSON"
+          >
+            <Download className="w-4 h-4" />
+            <span>Backup Data (JSON)</span>
           </button>
 
           <div className="flex items-center gap-3 px-1 flex-wrap">

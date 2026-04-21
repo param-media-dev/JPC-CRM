@@ -2,7 +2,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 import * as pdfjsLib from 'pdfjs-dist';
 
 // Configure the worker for pdfjs
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
 export interface ParsedCandidate {
   full_name: string;
@@ -77,7 +77,7 @@ export async function parseResume(fileBase64: string, mimeType: string): Promise
     parts.push({ text: "Return the data in JSON format following the provided schema. If a field is not found, return an empty string." });
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-flash-lite-preview",
+      model: "gemini-3.1-flash-preview",
       contents: { parts },
       config: {
         responseMimeType: "application/json",

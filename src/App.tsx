@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ToastProvider } from './contexts/ToastContext';
+import { DataProvider } from './contexts/DataContext';
 import { LoginPage } from './pages/LoginPage';
 import { CandidateDashboard } from './pages/CandidateDashboard';
 import { Sidebar } from './components/Sidebar';
@@ -30,10 +31,10 @@ const AppContent: React.FC = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
   useEffect(() => {
-    if (isAuthReady) {
+    if (isAuthReady && user) {
       testConnection();
     }
-  }, [isAuthReady]);
+  }, [isAuthReady, user]);
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -185,9 +186,11 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <ToastProvider>
-          <AppContent />
-        </ToastProvider>
+        <DataProvider>
+          <ToastProvider>
+            <AppContent />
+          </ToastProvider>
+        </DataProvider>
       </AuthProvider>
     </ThemeProvider>
   );

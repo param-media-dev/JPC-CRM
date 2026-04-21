@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Modal } from './Modal';
 import { LEAD_SOURCES } from '../constants';
-import { getUsers, generateId, saveCandidate, seedQCChecklist, logActivity, addNotification, checkDuplicateCandidate } from '../services/storage';
+import { getUsers, generateId, saveCandidate, seedQCChecklist, logActivity, addNotification, checkDuplicateCandidate, addFollowUp } from '../services/storage';
 import { uploadFile } from '../services/fileService';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
@@ -62,7 +62,10 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
     education: '',
     lead_source: 'Facebook',
     assigned_sales: '',
-    notes: ''
+    notes: '',
+    schedule_call_date: '',
+    schedule_call_time: '',
+    schedule_call_timezone: 'EST (Eastern Time)'
   });
 
   const [extraData, setExtraData] = useState({
@@ -238,6 +241,20 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
       });
     }
 
+    if (formData.schedule_call_date && formData.schedule_call_time) {
+      const timezoneStr = formData.schedule_call_timezone || 'EST (Eastern Time)';
+      const t12 = new Date(`1970-01-01T${formData.schedule_call_time}:00`).toLocaleTimeString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true });
+      addFollowUp({
+        candidate_id: id,
+        stage: 'lead_generation',
+        followup_date: formData.schedule_call_date,
+        note: `Initial Call Scheduled at ${t12} ${timezoneStr}`,
+        done: false,
+        created_by: user?.id || null,
+      });
+      logActivity(id, 'Follow-up scheduled', `Scheduled initial call for ${formData.schedule_call_date} at ${t12} ${timezoneStr}`, user?.id || null);
+    }
+
     showToast('Candidate added successfully', 'success');
     onSuccess();
     onClose();
@@ -252,9 +269,12 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
       education: '',
       lead_source: 'Facebook',
       assigned_sales: '',
-      notes: ''
+      notes: '',
+      schedule_call_date: '',
+      schedule_call_time: '',
+      schedule_call_timezone: 'EST (Eastern Time)'
     });
-    setResumeData({ base64: null, filename: null });
+    setResumeData({ base64: null, url: null, filename: null });
     setExtraData({
       degree: '',
       university: '',
@@ -453,6 +473,41 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
               <option key={u.id} value={u.id}>{u.display_name}</option>
             ))}
           </select>
+        </div>
+        <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-text-secondary uppercase tracking-wider">Schedule Call Date</label>
+            <input
+              type="date"
+              value={formData.schedule_call_date}
+              onChange={e => setFormData({ ...formData, schedule_call_date: e.target.value })}
+              className="w-full bg-bg-tertiary border border-border-primary rounded-xl px-4 py-2.5 text-text-primary focus:outline-none focus:border-accent-blue transition-colors"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-text-secondary uppercase tracking-wider">Call Time</label>
+            <input
+              type="time"
+              value={formData.schedule_call_time}
+              onChange={e => setFormData({ ...formData, schedule_call_time: e.target.value })}
+              className="w-full bg-bg-tertiary border border-border-primary rounded-xl px-4 py-2.5 text-text-primary focus:outline-none focus:border-accent-blue transition-colors"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-text-secondary uppercase tracking-wider">Timezone (US)</label>
+            <select
+              value={formData.schedule_call_timezone}
+              onChange={e => setFormData({ ...formData, schedule_call_timezone: e.target.value })}
+              className="w-full bg-bg-tertiary border border-border-primary rounded-xl px-4 py-2.5 text-text-primary focus:outline-none focus:border-accent-blue transition-colors"
+            >
+              <option value="EST (Eastern Time)">EST (Eastern Time)</option>
+              <option value="CST (Central Time)">CST (Central Time)</option>
+              <option value="MST (Mountain Time)">MST (Mountain Time)</option>
+              <option value="PST (Pacific Time)">PST (Pacific Time)</option>
+              <option value="AST (Alaska Time)">AST (Alaska Time)</option>
+              <option value="HST (Hawaii Time)">HST (Hawaii Time)</option>
+            </select>
+          </div>
         </div>
         <div className="md:col-span-2 space-y-1">
           <label className="text-xs font-bold text-text-secondary uppercase tracking-wider">Notes</label>

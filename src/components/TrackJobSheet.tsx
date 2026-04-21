@@ -3,11 +3,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { X, Link as LinkIcon, Calendar, User as UserIcon, Send, AlertCircle, Clock, ExternalLink } from 'lucide-react';
 import { Candidate, Application } from '../types';
 import { generateId, logActivity } from '../services/storage';
-import { db } from '../firebase';
-import { doc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { cn } from '../lib/utils';
+import { apiService } from '../services/apiService';
 
 interface TrackJobSheetProps {
   candidate: Candidate | null;
@@ -48,7 +47,7 @@ export const TrackJobSheet: React.FC<TrackJobSheetProps> = ({ candidate, isOpen,
     };
 
     try {
-      await setDoc(doc(db, 'jpc_applications', id), newApp);
+      await apiService.request('/applications', { method: 'POST', body: JSON.stringify(newApp) });
       await logActivity(candidate.id, 'Job Applied', `Applied via Link: ${jobLink} by ${user?.display_name}`, user?.id || null);
       showToast('Application tracked successfully', 'success');
       setJobLink('');

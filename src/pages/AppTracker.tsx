@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { subscribeToCollection, generateId, logActivity } from '../services/storage';
 import { Application, Candidate, User, Notification } from '../types';
@@ -18,11 +18,10 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { db } from '../firebase';
-import { collection, doc, setDoc, query, where, getDocs } from 'firebase/firestore';
 import { useToast } from '../contexts/ToastContext';
 import { CandidateSheet } from '../components/CandidateSheet';
 import { TrackJobSheet } from '../components/TrackJobSheet';
+import { apiService } from '../services/apiService';
 
 export const AppTracker: React.FC = () => {
   const { user, isAuthReady } = useAuth();
@@ -41,31 +40,29 @@ export const AppTracker: React.FC = () => {
   const [inlineJobLink, setInlineJobLink] = useState('');
   const [isInlineSubmitting, setIsInlineSubmitting] = useState(false);
 
-  useEffect(() => {
+  const fetchData = useCallback(async () => {
     if (!isAuthReady) return;
-
-    const unsubApps = subscribeToCollection<Application>('jpc_applications', (data) => {
-      setApplications(data.sort((a, b) => new Date(b.applied_at).getTime() - new Date(a.applied_at).getTime()));
+    setIsLoading(true);
+    try {
+      const [appsData, candsData, teamData] = await Promise.all([
+        apiService.getApplications(),
+        apiService.getCandidates(),
+        apiService.getUsers()
+      ]);
+      setApplications(appsData.sort((a: any, b: any) => new Date(b.applied_at).getTime() - new Date(a.applied_at).getTime()));
+      setCandidates(candsData);
+      setTeam(teamData);
+      setReportLogs([]); // Mock or implement if exists
+    } catch (error) {
+      console.error('Failed to fetch data:', error);
+    } finally {
       setIsLoading(false);
-    });
-
-    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
-      setCandidates(data);
-    });
-
-    const unsubTeam = subscribeToCollection<User>('jpc_users', (data) => {
-      setTeam(data);
-    });
-
-    const unsubLogs = subscribeToCollection<any>('jpc_report_logs', setReportLogs);
-
-    return () => {
-      unsubApps();
-      unsubCandidates();
-      unsubTeam();
-      unsubLogs();
-    };
+    }
   }, [isAuthReady]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const filteredApps = useMemo(() => {
     return applications.filter(app => {
@@ -159,26 +156,32 @@ export const AppTracker: React.FC = () => {
               };
 
               try {
-                await setDoc(doc(db, 'jpc_notifications', id), notification);
+                await apiService.request('/notifications', { method: 'POST', body: JSON.stringify(notification) });
                 
                 if (manager) {
                   const ccId = generateId();
-                  await setDoc(doc(db, 'jpc_notifications', ccId), {
-                    ...notification,
-                    id: ccId,
-                    recipient_id: String(manager.id),
-                    message: `[CC] ${message}`
+                  await apiService.request('/notifications', { 
+                    method: 'POST', 
+                    body: JSON.stringify({
+                      ...notification,
+                      id: ccId,
+                      recipient_id: String(manager.id),
+                      message: `[CC] ${message}`
+                    })
                   });
                 }
 
                 // Log the report to prevent duplicates
                 const logId = generateId();
-                await setDoc(doc(db, 'jpc_report_logs', logId), {
-                  id: logId,
-                  recruiter_id: String(user.id),
-                  candidate_id: p.id,
-                  date: today,
-                  sent_at: new Date().toISOString()
+                await apiService.request('/logs', {
+                  method: 'POST',
+                  body: JSON.stringify({
+                    id: logId,
+                    recruiter_id: String(user.id),
+                    candidate_id: p.id,
+                    date: today,
+                    sent_at: new Date().toISOString()
+                  })
                 });
 
                 console.log(`[AUTO-EMAIL SIMULATION] To: ${tl.display_name}, Message: ${message}`);
@@ -235,7 +238,7 @@ export const AppTracker: React.FC = () => {
     };
 
     try {
-      await setDoc(doc(db, 'jpc_applications', id), newApp);
+      await apiService.request('/applications', { method: 'POST', body: JSON.stringify(newApp) });
       await logActivity(candidate.id, 'Job Applied (Inline)', `Applied via Link: ${inlineJobLink}`, user?.id || null);
       showToast('Entry added to sheet', 'success');
       setInlineJobLink('');

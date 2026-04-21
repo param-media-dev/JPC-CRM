@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { subscribeToCollection, saveCandidate, addNotification } from '../services/storage';
+import { saveCandidate, addNotification } from '../services/storage';
 import { Candidate, User, Stage } from '../types';
 import { STAGES } from '../constants';
+import { apiService } from '../services/apiService';
 
 export const SLAMonitor: React.FC = () => {
   const { user, isAuthReady } = useAuth();
@@ -11,17 +12,24 @@ export const SLAMonitor: React.FC = () => {
 
   useEffect(() => {
     if (!isAuthReady || !user) return;
-    
-    // Allow admins, managers, and system-level roles to run the monitor
     if (!['administrator', 'jpc_sysadmin', 'jpc_manager'].includes(user.role)) return;
 
-    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', setCandidates);
-    const unsubUsers = subscribeToCollection<User>('jpc_users', setUsers);
-
-    return () => {
-      unsubCandidates();
-      unsubUsers();
+    const fetchData = async () => {
+      try {
+        const [candidatesData, usersData] = await Promise.all([
+          apiService.getCandidates(),
+          apiService.getUsers()
+        ]);
+        setCandidates(candidatesData);
+        setUsers(usersData);
+      } catch (error) {
+        console.error('SLAMonitor fetch error:', error);
+      }
     };
+
+    fetchData();
+    const interval = setInterval(fetchData, 5 * 60 * 1000); // Fetch data every 5 minutes
+    return () => clearInterval(interval);
   }, [isAuthReady, user]);
 
   useEffect(() => {

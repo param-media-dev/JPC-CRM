@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { subscribeToCollection, saveCandidate, logActivity } from '../services/storage';
+import { useData } from '../contexts/DataContext';
+import { saveCandidate, logActivity } from '../services/storage';
 import { STAGES } from '../constants';
 import { Search, Filter, X, Package, Phone, Mail, MapPin, Calendar, Users, ArrowRight, MoreVertical, Edit2, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -8,19 +9,10 @@ import { cn } from '../lib/utils';
 import { Candidate, Stage } from '../types';
 
 export const Pipeline: React.FC = () => {
-  const { user, isAuthReady } = useAuth();
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { user } = useAuth();
+  const { candidates: allCandidates, isLoading } = useData();
+  const candidates = useMemo(() => allCandidates.filter(c => c.current_stage !== 'not_interested'), [allCandidates]);
   const [search, setSearch] = useState('');
-
-  useEffect(() => {
-    if (!isAuthReady) return;
-    const unsub = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
-      setCandidates(data.filter(c => c.current_stage !== 'not_interested'));
-      setIsLoading(false);
-    });
-    return () => unsub();
-  }, [isAuthReady]);
 
   const filteredCandidates = useMemo(() => {
     return candidates.filter(c => {

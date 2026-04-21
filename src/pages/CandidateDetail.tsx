@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
-  subscribeToCollection,
   saveCandidate, 
   logActivity, 
   addNotification,
@@ -61,11 +60,8 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
+import { apiService } from '../services/apiService';
 import { Candidate, Payment, Promise as PromiseType, QCChecklistItem, FollowUp, ActivityLog, User, Stage, ResumeChangeRequest, Application, InterviewRequest } from '../types';
-import { query, collection, where, onSnapshot, doc, setDoc, getDocs } from 'firebase/firestore';
-import { db, firebaseConfig } from '../firebase';
-import { initializeApp } from 'firebase/app';
-import { getAuth, createUserWithEmailAndPassword, signOut as secondarySignOut, updateProfile } from 'firebase/auth';
 
 export const CandidateDetail: React.FC = () => {
   const { user, isAuthReady } = useAuth();
@@ -97,6 +93,61 @@ export const CandidateDetail: React.FC = () => {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  const fetchAllData = useCallback(async () => {
+    if (!id) return;
+    setIsLoading(true);
+    try {
+      const [
+        candData,
+        paymentsData,
+        checklistData,
+        followUpsData,
+        activityLogsData,
+        appsData,
+        interviewsData,
+        usersData
+      ] = await Promise.all([
+        apiService.getCandidate(id),
+        apiService.getPayments({ candidate_id: id }),
+        // Checklists are often handled by candidate state or specific endpoint
+        Promise.resolve([]), 
+        apiService.getFollowups({ candidate_id: id }),
+        // Activity logs often handled by specific endpoint
+        Promise.resolve([]),
+        apiService.getApplications({ candidate_id: id }),
+        apiService.getInterviews({ candidate_id: id }),
+        apiService.getUsers()
+      ]);
+
+      if (candData) {
+        // Role-based access check
+        if (user?.role === 'jpc_recruiter' && String(candData.assigned_recruiter) !== String(user.id)) {
+          showToast('Access denied. This candidate is not assigned to you.', 'error');
+          window.location.hash = '#candidates';
+          return;
+        }
+        if (user?.role === 'jpc_lead_gen' && String(candData.lead_generated_by) !== String(user.id)) {
+          showToast('Access denied. You did not generate this lead.', 'error');
+          window.location.hash = '#candidates';
+          return;
+        }
+
+        setCandidate(candData);
+        setPayments(paymentsData.sort((a: any, b: any) => a.part_number - b.part_number));
+        setFollowUps(followUpsData);
+        setApplications(appsData);
+        setInterviews(interviewsData);
+        setAllUsers(usersData);
+        // setChecklist(checklistData);
+      }
+    } catch (error) {
+      console.error('Failed to fetch candidate details:', error);
+      showToast('Failed to load candidate details', 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [id, user, showToast]);
+
   useEffect(() => {
     if (!isAuthReady || !id) return;
 
@@ -107,76 +158,8 @@ export const CandidateDetail: React.FC = () => {
       return;
     }
 
-    const unsubCandidate = onSnapshot(doc(db, 'jpc_candidates', id), (doc) => {
-      if (doc.exists()) {
-        const data = doc.data() as Candidate;
-        
-        // Role-based access check
-        if (user?.role === 'jpc_recruiter' && String(data.assigned_recruiter) !== String(user.id)) {
-          showToast('Access denied. This candidate is not assigned to you.', 'error');
-          window.location.hash = '#candidates';
-          return;
-        }
-        if (user?.role === 'jpc_lead_gen' && String(data.lead_generated_by) !== String(user.id)) {
-          showToast('Access denied. You did not generate this lead.', 'error');
-          window.location.hash = '#candidates';
-          return;
-        }
-
-        setCandidate(data);
-        setIsLoading(false);
-      }
-    });
-
-    const unsubPayments = onSnapshot(query(collection(db, 'jpc_payments'), where('candidate_id', '==', id)), (snap) => {
-      setPayments(snap.docs.map(d => d.data() as Payment).sort((a, b) => a.part_number - b.part_number));
-    });
-
-    const unsubPromises = onSnapshot(query(collection(db, 'jpc_promises'), where('candidate_id', '==', id)), (snap) => {
-      setPromises(snap.docs.map(d => d.data() as PromiseType).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
-    });
-
-    const unsubChecklist = onSnapshot(query(collection(db, 'jpc_qc_checklist'), where('candidate_id', '==', id)), (snap) => {
-      setChecklist(snap.docs.map(d => d.data() as QCChecklistItem).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
-    });
-
-    const unsubFollowUps = onSnapshot(query(collection(db, 'jpc_followups'), where('candidate_id', '==', id)), (snap) => {
-      setFollowUps(snap.docs.map(d => d.data() as FollowUp));
-    });
-
-    const unsubActivity = onSnapshot(query(collection(db, 'jpc_activity_logs'), where('candidate_id', '==', id)), (snap) => {
-      setActivityLogs(snap.docs.map(d => d.data() as ActivityLog));
-    });
-
-    const unsubResume = onSnapshot(query(collection(db, 'jpc_resume_requests'), where('candidate_id', '==', id)), (snap) => {
-      setResumeRequests(snap.docs.map(d => d.data() as ResumeChangeRequest));
-    });
-
-    const unsubApps = onSnapshot(query(collection(db, 'jpc_applications'), where('candidate_id', '==', id)), (snap) => {
-      setApplications(snap.docs.map(d => d.data() as Application));
-    });
-
-    const unsubInterviews = onSnapshot(query(collection(db, 'jpc_interviews'), where('candidate_id', '==', id)), (snap) => {
-      setInterviews(snap.docs.map(d => d.data() as InterviewRequest));
-    });
-
-    const unsubUsers = subscribeToCollection<User>('jpc_users', (data) => {
-      setAllUsers(data);
-    });
-
-    return () => {
-      unsubCandidate();
-      unsubPayments();
-      unsubPromises();
-      unsubChecklist();
-      unsubFollowUps();
-      unsubActivity();
-      unsubResume();
-      unsubApps();
-      unsubInterviews();
-      unsubUsers();
-    };
-  }, [isAuthReady, id]);
+    fetchAllData();
+  }, [isAuthReady, id, user, fetchAllData]);
 
   const salesUsers = allUsers.filter(u => u.role === 'jpc_sales');
   const csUsers = allUsers.filter(u => u.role === 'jpc_cs');
@@ -335,7 +318,7 @@ export const CandidateDetail: React.FC = () => {
   };
 
   const handleGenerateAccess = async () => {
-    if (!candidate.email) {
+    if (!candidate?.email) {
       showToast('Candidate must have an email address to generate access.', 'error');
       return;
     }
@@ -344,79 +327,22 @@ export const CandidateDetail: React.FC = () => {
     const password = generateRandomPassword();
 
     try {
-      // 1. Create Firebase Auth user using a secondary app instance
-      // This allows creating a user without logging out the current admin
-      const secondaryApp = initializeApp(firebaseConfig, 'SecondaryCandidate');
-      const secondaryAuth = getAuth(secondaryApp);
+      // Create user record via REST API
+      const newUser: User = {
+        username: candidate.email.split('@')[0],
+        display_name: candidate.full_name,
+        role: 'candidate',
+        candidate_id: candidate.id,
+      } as User;
+
+      await apiService.createUser(newUser);
       
-      try {
-        const { user: fUser } = await createUserWithEmailAndPassword(
-          secondaryAuth, 
-          candidate.email, 
-          password
-        );
-        await updateProfile(fUser, { displayName: candidate.full_name });
-        
-        // 2. Create user record in Firestore (jpc_users)
-        const newUser: User = {
-          id: fUser.uid,
-          username: candidate.email.split('@')[0],
-          display_name: candidate.full_name,
-          role: 'candidate',
-          candidate_id: candidate.id,
-          created_at: new Date().toISOString()
-        };
-
-        await setDoc(doc(db, 'jpc_users', fUser.uid), newUser);
-        
-        // 3. Update candidate document to remove temp password if any
-        await saveCandidate({
-          ...candidate,
-          temp_portal_password: null
-        } as Candidate, user?.id || null);
-
-        await secondarySignOut(secondaryAuth);
-        
-        setGeneratedPassword(password);
-        showToast('Portal access created successfully!', 'success');
-        await logActivity(candidate.id, 'Portal access generated', `Login credentials created for ${candidate.email}`, user?.id || null);
-      } catch (authError: any) {
-        console.error('Auth creation error:', authError);
-        let message = 'Failed to create portal access';
-        
-        if (authError.code === 'auth/email-already-in-use') {
-          // Try to find if this user already exists in Firestore
-          const usersSnap = await getDocs(query(collection(db, 'jpc_users'), where('email', '==', candidate.email)));
-          
-          if (!usersSnap.empty) {
-            const existingUser = usersSnap.docs[0].data() as User;
-            
-            // If they exist but aren't linked to this candidate, link them
-            if (existingUser.candidate_id !== candidate.id) {
-              await setDoc(doc(db, 'jpc_users', String(existingUser.id)), { 
-                ...existingUser, 
-                candidate_id: candidate.id,
-                role: 'candidate' // Ensure they have the candidate role
-              });
-              
-              showToast('Existing account linked to this candidate!', 'success');
-              await logActivity(candidate.id, 'Portal access linked', `Existing account (${candidate.email}) was linked to this candidate profile`, user?.id || null);
-              setIsGeneratingAccess(false);
-              return;
-            } else {
-              message = 'This candidate already has portal access.';
-            }
-          } else {
-            message = 'This email is already registered in our system. Please use a different email or contact support to link the existing account.';
-          }
-        } else if (authError.code === 'auth/weak-password') {
-          message = 'Password should be at least 6 characters.';
-        }
-        showToast(message, 'error');
-      }
-    } catch (error) {
-      console.error('Generate access error:', error);
-      showToast('An error occurred while creating access', 'error');
+      setGeneratedPassword(password);
+      showToast('Portal access created successfully!', 'success');
+      await logActivity(candidate.id, 'Portal access generated', `Login credentials created for ${candidate.email}`, user?.id || null);
+    } catch (error: any) {
+      console.error('Portal creation error:', error);
+      showToast(error.message || 'Failed to create portal access', 'error');
     } finally {
       setIsGeneratingAccess(false);
     }

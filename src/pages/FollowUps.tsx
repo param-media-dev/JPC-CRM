@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { subscribeToCollection, updateFollowUp, logActivity } from '../services/storage';
+import { useData } from '../contexts/DataContext';
+import { updateFollowUp, logActivity } from '../services/storage';
 import { STAGES } from '../constants';
 import { Clock, CheckCircle2, Calendar, User, ArrowRight, AlertCircle, Search, Filter } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -8,30 +9,10 @@ import { cn } from '../lib/utils';
 import { FollowUp, Candidate, Stage } from '../types';
 
 export const FollowUps: React.FC = () => {
-  const { user, isAuthReady } = useAuth();
-  const [followUps, setFollowUps] = useState<FollowUp[]>([]);
-  const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { user } = useAuth();
+  const { followUps, candidates, isLoading } = useData();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'pending' | 'done'>('pending');
-
-  useEffect(() => {
-    if (!isAuthReady) return;
-
-    const unsubFollowUps = subscribeToCollection<FollowUp>('jpc_followups', (data) => {
-      setFollowUps(data);
-      setIsLoading(false);
-    });
-
-    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
-      setCandidates(data);
-    });
-
-    return () => {
-      unsubFollowUps();
-      unsubCandidates();
-    };
-  }, [isAuthReady]);
 
   const today = new Date().toISOString().split('T')[0];
 

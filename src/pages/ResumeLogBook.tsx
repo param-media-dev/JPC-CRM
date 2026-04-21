@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { subscribeToCollection, generateId, addNotification } from '../services/storage';
 import { ResumeChangeRequest, Candidate, User } from '../types';
@@ -17,9 +17,8 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { db } from '../firebase';
-import { doc, setDoc, updateDoc } from 'firebase/firestore';
 import { useToast } from '../contexts/ToastContext';
+import { apiService } from '../services/apiService';
 import { uploadFile } from '../services/fileService';
 import { Upload, FileText, Loader2 } from 'lucide-react';
 
@@ -49,23 +48,28 @@ export const ResumeLogBook: React.FC = () => {
     details: ''
   });
 
-  useEffect(() => {
+  const fetchData = useCallback(async () => {
     if (!isAuthReady) return;
-
-    const unsubRequests = subscribeToCollection<ResumeChangeRequest>('jpc_resume_requests', (data) => {
-      setRequests(data.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+    setIsLoading(true);
+    try {
+      const [reqsData, candsData, teamData] = await Promise.all([
+        apiService.getCollection('resume_requests'),
+        apiService.getCandidates(),
+        apiService.getUsers()
+      ]);
+      setRequests((reqsData as any[]).sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+      setCandidates(candsData);
+      setTeam(teamData);
+    } catch (error) {
+      console.error('Failed to fetch data:', error);
+    } finally {
       setIsLoading(false);
-    });
-
-    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', setCandidates);
-    const unsubTeam = subscribeToCollection<User>('jpc_users', setTeam);
-
-    return () => {
-      unsubRequests();
-      unsubCandidates();
-      unsubTeam();
-    };
+    }
   }, [isAuthReady]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const filteredRequests = useMemo(() => {
     return requests.filter(req => {
@@ -103,7 +107,7 @@ export const ResumeLogBook: React.FC = () => {
     };
 
     try {
-      await setDoc(doc(db, 'jpc_resume_requests', id), newRequest);
+      await apiService.request('/resume_requests', { method: 'POST', body: JSON.stringify(newRequest) });
       showToast('Resume change request submitted to Marketing TL', 'success');
       setIsAddModalOpen(false);
       setFormData({ candidate_id: '', details: '' });
@@ -202,7 +206,10 @@ export const ResumeLogBook: React.FC = () => {
         if (resumeFilename) updateData.resume_filename = resumeFilename;
       }
 
-      await updateDoc(doc(db, 'jpc_resume_requests', requestId), updateData);
+      await apiService.request(`/resume_requests/${requestId}`, {
+        method: 'PUT',
+        body: JSON.stringify(updateData)
+      });
       
       const request = requests.find(r => r.id === requestId);
       if (request) {
