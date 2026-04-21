@@ -49,9 +49,9 @@ export const AppTracker: React.FC = () => {
         apiService.getCandidates(),
         apiService.getUsers()
       ]);
-      setApplications(appsData.sort((a: any, b: any) => new Date(b.applied_at).getTime() - new Date(a.applied_at).getTime()));
-      setCandidates(candsData);
-      setTeam(teamData);
+      setApplications(Array.isArray(appsData) ? appsData.sort((a: any, b: any) => new Date(b.applied_at).getTime() - new Date(a.applied_at).getTime()) : []);
+      setCandidates(Array.isArray(candsData) ? candsData : []);
+      setTeam(Array.isArray(teamData) ? teamData : []);
       setReportLogs([]); // Mock or implement if exists
     } catch (error) {
       console.error('Failed to fetch data:', error);
@@ -121,77 +121,12 @@ export const AppTracker: React.FC = () => {
     if (!user || user.role !== 'jpc_recruiter' || stats.candidateProgress.length === 0) return;
 
     const checkAndNotify = async () => {
+      // Automatic notifications are currently disabled as the backend does not support the /notifications endpoint
+      /*
       const today = new Date().toISOString().split('T')[0];
-      const currentHour = new Date().getHours();
-      
-      // Automatically trigger after 5 PM (17:00)
-      if (currentHour < 17) return;
-
-      for (const p of stats.candidateProgress) {
-        if (p.count < p.target) {
-          // Check if already reported today for this candidate
-          const alreadyReported = reportLogs.some(log => 
-            log.recruiter_id === String(user.id) && 
-            log.candidate_id === p.id && 
-            log.date === today
-          );
-
-          if (!alreadyReported) {
-            const recruiter = team.find(u => String(u.id) === String(user.id));
-            const tl = team.find(u => String(u.id) === String(recruiter?.leader_id));
-            const manager = team.find(u => u.role === 'jpc_manager' || u.role === 'administrator' || u.role === 'jpc_sysadmin');
-
-            if (tl) {
-              const id = generateId();
-              const message = `Automatic Alert: Recruiter ${user.display_name} has not completed the target for candidate ${p.name}. Progress: ${p.count}/${p.target} applications (${p.profiles} profile(s)).`;
-              
-              const notification: Notification = {
-                id,
-                recipient_id: String(tl.id),
-                sender_id: String(user.id),
-                type: 'target_not_met',
-                message,
-                read: false,
-                created_at: new Date().toISOString()
-              };
-
-              try {
-                await apiService.request('/notifications', { method: 'POST', body: JSON.stringify(notification) });
-                
-                if (manager) {
-                  const ccId = generateId();
-                  await apiService.request('/notifications', { 
-                    method: 'POST', 
-                    body: JSON.stringify({
-                      ...notification,
-                      id: ccId,
-                      recipient_id: String(manager.id),
-                      message: `[CC] ${message}`
-                    })
-                  });
-                }
-
-                // Log the report to prevent duplicates
-                const logId = generateId();
-                await apiService.request('/logs', {
-                  method: 'POST',
-                  body: JSON.stringify({
-                    id: logId,
-                    recruiter_id: String(user.id),
-                    candidate_id: p.id,
-                    date: today,
-                    sent_at: new Date().toISOString()
-                  })
-                });
-
-                console.log(`[AUTO-EMAIL SIMULATION] To: ${tl.display_name}, Message: ${message}`);
-              } catch (error) {
-                console.error('Auto-notification error:', error);
-              }
-            }
-          }
-        }
-      }
+      ...
+      */
+      console.log('Automatic target checks are scheduled but notifications are disabled due to missing API support.');
     };
 
     checkAndNotify();

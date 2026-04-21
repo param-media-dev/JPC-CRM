@@ -55,9 +55,9 @@ export const CandidateDashboard: React.FC = () => {
 
       if (candData) {
         setCandidate(candData);
-        setPayments(paymentsData);
-        setApplications(appsData);
-        setInterviews(interviewsData);
+        setPayments(Array.isArray(paymentsData) ? paymentsData : []);
+        setApplications(Array.isArray(appsData) ? appsData : []);
+        setInterviews(Array.isArray(interviewsData) ? interviewsData : []);
         // Activity logs might need a specific fetch if needed
         setActivityLogs([]); 
       }

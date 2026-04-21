@@ -57,9 +57,9 @@ export const ResumeLogBook: React.FC = () => {
         apiService.getCandidates(),
         apiService.getUsers()
       ]);
-      setRequests((reqsData as any[]).sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
-      setCandidates(candsData);
-      setTeam(teamData);
+      setRequests((Array.isArray(reqsData) ? reqsData : []).sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+      setCandidates(Array.isArray(candsData) ? candsData : []);
+      setTeam(Array.isArray(teamData) ? teamData : []);
     } catch (error) {
       console.error('Failed to fetch data:', error);
     } finally {

@@ -56,7 +56,11 @@ export async function parseResume(fileBase64: string, mimeType: string): Promise
       textToParse = await extractTextFromPDF(fileBase64);
     }
 
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error('GEMINI_API_KEY is not configured. Please add it to your environment variables.');
+    }
+    const ai = new GoogleGenAI({ apiKey });
     
     // Switch to lite tier for fastest performance
     
@@ -77,7 +81,7 @@ export async function parseResume(fileBase64: string, mimeType: string): Promise
     parts.push({ text: "Return the data in JSON format following the provided schema. If a field is not found, return an empty string." });
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-flash-preview",
+      model: "gemini-3-flash-preview",
       contents: { parts },
       config: {
         responseMimeType: "application/json",

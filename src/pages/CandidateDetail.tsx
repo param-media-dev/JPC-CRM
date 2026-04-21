@@ -133,11 +133,11 @@ export const CandidateDetail: React.FC = () => {
         }
 
         setCandidate(candData);
-        setPayments(paymentsData.sort((a: any, b: any) => a.part_number - b.part_number));
-        setFollowUps(followUpsData);
-        setApplications(appsData);
-        setInterviews(interviewsData);
-        setAllUsers(usersData);
+        setPayments(Array.isArray(paymentsData) ? paymentsData.sort((a: any, b: any) => a.part_number - b.part_number) : []);
+        setFollowUps(Array.isArray(followUpsData) ? followUpsData : []);
+        setApplications(Array.isArray(appsData) ? appsData : []);
+        setInterviews(Array.isArray(interviewsData) ? interviewsData : []);
+        setAllUsers(Array.isArray(usersData) ? usersData : []);
         // setChecklist(checklistData);
       }
     } catch (error) {
@@ -161,11 +161,37 @@ export const CandidateDetail: React.FC = () => {
     fetchAllData();
   }, [isAuthReady, id, user, fetchAllData]);
 
-  const salesUsers = allUsers.filter(u => u.role === 'jpc_sales');
-  const csUsers = allUsers.filter(u => u.role === 'jpc_cs');
-  const resumeUsers = allUsers.filter(u => u.role === 'jpc_resume');
-  const marketingLeaders = allUsers.filter(u => u.role === 'jpc_marketing');
-  const marketingUsers = allUsers.filter(u => u.role === 'jpc_marketing_support' || u.role === 'jpc_marketing');
+  const salesUsers = allUsers.filter(u => 
+    u.role === 'jpc_sales' || 
+    u.role === 'jpc_manager' || 
+    u.role === 'administrator' || 
+    u.role === 'jpc_sysadmin'
+  );
+  const csUsers = allUsers.filter(u => 
+    u.role === 'jpc_cs' || 
+    u.role === 'jpc_manager' || 
+    u.role === 'administrator' || 
+    u.role === 'jpc_sysadmin'
+  );
+  const resumeUsers = allUsers.filter(u => 
+    u.role === 'jpc_resume' || 
+    u.role === 'jpc_manager' || 
+    u.role === 'administrator' || 
+    u.role === 'jpc_sysadmin'
+  );
+  const marketingLeaders = allUsers.filter(u => 
+    u.role === 'jpc_marketing' || 
+    u.role === 'jpc_manager' || 
+    u.role === 'administrator' || 
+    u.role === 'jpc_sysadmin'
+  );
+  const marketingUsers = allUsers.filter(u => 
+    u.role === 'jpc_marketing_support' || 
+    u.role === 'jpc_marketing' || 
+    u.role === 'jpc_manager' || 
+    u.role === 'administrator' || 
+    u.role === 'jpc_sysadmin'
+  );
 
   // Edit states
   const [isEditingPersonal, setIsEditingPersonal] = useState(false);
@@ -1445,7 +1471,7 @@ export const CandidateDetail: React.FC = () => {
                           <select 
                             value={p.status} 
                             onChange={async (e) => {
-                              await updatePromise({...p, status: e.target.value as any});
+                              await updatePromise(p.id, { status: e.target.value as any });
                               await logActivity(candidate.id, 'Promise status updated', `Promise status changed to ${e.target.value}`, user?.id || null);
                             }}
                             className={cn(

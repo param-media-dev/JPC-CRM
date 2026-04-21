@@ -121,17 +121,23 @@ export const updatePayment = async (payment: Payment) => {
 // Promises
 export const addPromise = async (promise: any) => {
   try {
-    // Implement if exists in API, else mock
+    await apiService.request('/promises', {
+      method: 'POST',
+      body: JSON.stringify(promise),
+    });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, 'promises');
   }
 };
 
-export const updatePromise = async (promise: any) => {
+export const updatePromise = async (id: string, updates: any) => {
   try {
-    // Implement if exists in API
+    await apiService.request(`/promises/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, `promises/${promise.id}`);
+    handleFirestoreError(error, OperationType.UPDATE, `promises/${id}`);
   }
 };
 

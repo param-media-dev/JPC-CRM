@@ -35,6 +35,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentHash, isOpen, setIsOpen
   const { candidates: allCandidates, followUps: allFollowUps, exportData } = useData();
 
   const followUpsCount = useMemo(() => {
+    if (!Array.isArray(allFollowUps)) return 0;
     const today = new Date().toISOString().split('T')[0];
     const personal = user?.role === 'administrator' || user?.role === 'jpc_manager' 
       ? allFollowUps 

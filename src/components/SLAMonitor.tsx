@@ -20,8 +20,8 @@ export const SLAMonitor: React.FC = () => {
           apiService.getCandidates(),
           apiService.getUsers()
         ]);
-        setCandidates(candidatesData);
-        setUsers(usersData);
+        setCandidates(Array.isArray(candidatesData) ? candidatesData : []);
+        setUsers(Array.isArray(usersData) ? usersData : []);
       } catch (error) {
         console.error('SLAMonitor fetch error:', error);
       }

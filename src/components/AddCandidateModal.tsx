@@ -46,7 +46,18 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
   useEffect(() => {
     if (isOpen) {
       getUsers().then(users => {
-        setSalesUsers(users.filter(u => u.role === 'jpc_sales'));
+        if (Array.isArray(users)) {
+          // Include Sales, Managers, and Admins in the sales selection
+          setSalesUsers(users.filter(u => 
+            u.role === 'jpc_sales' || 
+            u.role === 'jpc_manager' || 
+            u.role === 'administrator' || 
+            u.role === 'jpc_sysadmin'
+          ));
+        } else {
+          console.warn('getUsers() did not return an array:', users);
+          setSalesUsers([]);
+        }
       });
     }
   }, [isOpen]);

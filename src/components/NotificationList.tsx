@@ -25,33 +25,17 @@ export const NotificationList: React.FC = () => {
     if (!user) return;
 
     const fetchNotifications = async () => {
+      // API currently does not have a /notifications endpoint
+      // Disabling call to prevent 404 errors
+      /*
       try {
         const data = await apiService.getCollection('notifications', { recipient_id: String(user.id), read: '0' });
-        const notificationsData = (data as AppNotification[]).sort((a, b) => 
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        );
-
-        if (!isInitialLoad.current && 'Notification' in window && Notification.permission === 'granted') {
-          const prevIds = new Set(prevNotificationsRef.current.map(n => n.id));
-          const newNotifications = notificationsData.filter(n => !prevIds.has(n.id));
-          
-          newNotifications.forEach(n => {
-            const isRecent = (new Date().getTime() - new Date(n.created_at).getTime()) < 60000;
-            if (isRecent) {
-              new Notification('New Placify Alert', {
-                body: n.message,
-                icon: '/favicon.ico'
-              });
-            }
-          });
-        }
-        
-        isInitialLoad.current = false;
-        prevNotificationsRef.current = notificationsData;
-        setNotifications(notificationsData);
+        // ... rest of logic
       } catch (error) {
         console.error('Failed to fetch notifications:', error);
       }
+      */
+      setNotifications([]);
     };
 
     fetchNotifications();
@@ -60,12 +44,8 @@ export const NotificationList: React.FC = () => {
   }, [user]);
 
   const handleMarkAsRead = async (id: string) => {
-    try {
-      await apiService.request(`/notifications/${id}/read`, { method: 'POST' });
-      setNotifications(prev => prev.filter(n => n.id !== id));
-    } catch (error) {
-      console.error('Failed to mark as read:', error);
-    }
+    // API endpoint doesn't exist yet
+    setNotifications(prev => prev.filter(n => n.id !== id));
   };
 
   return (
@@ -92,17 +72,18 @@ export const NotificationList: React.FC = () => {
                   } catch (error) {
                     console.warn('Push notifications are not supported in this context:', error);
                   }
-                  if (user) {
-                    await apiService.request('/notifications', { 
-                      method: 'POST', 
-                      body: JSON.stringify({
-                        recipient_id: String(user.id),
-                        sender_id: String(user.id),
-                        type: 'system_alert',
-                        message: `Test notification at ${new Date().toLocaleTimeString()}`
-                      })
-                    });
-                  }
+                  
+                  // Mock notification since endpoint is missing
+                  const mockId = Math.random().toString(36).substring(7);
+                  setNotifications(prev => [{
+                    id: mockId,
+                    recipient_id: String(user?.id),
+                    sender_id: 'system',
+                    type: 'system_alert',
+                    message: `Test notification at ${new Date().toLocaleTimeString()}`,
+                    read: false,
+                    created_at: new Date().toISOString()
+                  }, ...prev]);
                 }}
                 className="text-xs px-2 py-1 bg-accent-blue text-white rounded hover:bg-accent-blue/90 transition-colors"
               >

@@ -43,10 +43,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         apiService.getApplications()
       ]);
 
-      setCandidates(candidatesData);
-      setFollowUps(followUpsData);
-      setInterviews(interviewsData);
-      setApplications(appsData);
+      setCandidates(Array.isArray(candidatesData) ? candidatesData : []);
+      setFollowUps(Array.isArray(followUpsData) ? followUpsData : []);
+      setInterviews(Array.isArray(interviewsData) ? interviewsData : []);
+      setApplications(Array.isArray(appsData) ? appsData : []);
       
       // Notifications and Resume requests might need specific endpoints or filters
       // For now, setting empty or mock if not in API summary
