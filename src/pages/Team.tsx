@@ -49,8 +49,29 @@ export const Team: React.FC = () => {
     if (!isAuthReady) return;
     setIsLoading(true);
     try {
-      const allUsers = await apiService.getUsers();
-      console.log('Fetched team data:', allUsers);
+      let allUsers: User[] = [];
+      let currentPage = 1;
+      let totalPages = 1;
+
+      // Fetch all pages
+      do {
+        const response = await apiService.request(`/users?page=${currentPage}`);
+        console.log(`Fetched team data (page ${currentPage}):`, response);
+        
+        let users: User[] = [];
+        if (Array.isArray(response)) {
+          users = response;
+          // If response is just an array, we can't detect pagination, assume 1 page
+          totalPages = 1;
+        } else if (response && typeof response === 'object' && Array.isArray((response as any).data)) {
+          users = (response as any).data;
+          totalPages = (response as any).total_pages || 1;
+        }
+        
+        allUsers = [...allUsers, ...users];
+        currentPage++;
+      } while (currentPage <= totalPages);
+      
       setTeam(allUsers);
     } catch (error) {
       console.error('Failed to fetch team:', error);

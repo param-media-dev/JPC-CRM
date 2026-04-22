@@ -122,42 +122,6 @@ async function startServer() {
     }
   });
 
-  // JPC API Proxy
-  app.all('/api/jpc/(.*)', async (req, res) => {
-    try {
-      const targetPath = req.params[0] || '';
-      const baseUrl = process.env.API_BASE_URL || 'https://test-wp.param.club/wp-json/jpc/v1';
-      const queryString = req.url.includes('?') ? '?' + req.url.split('?')[1] : '';
-      const url = `${baseUrl}/${targetPath}${queryString}`;
-
-      console.log(`Proxying ${req.method} request to: ${url}`);
-
-      const headers = { ...req.headers } as any;
-      delete headers.host;
-      delete headers.origin;
-      delete headers.referer;
-      delete headers.connection;
-      delete headers['content-length'];
-
-      const response = await axios({
-        method: req.method as any,
-        url: url,
-        data: req.body,
-        headers: headers,
-        validateStatus: () => true,
-      });
-
-      res.status(response.status).json(response.data);
-    } catch (error: any) {
-      console.error('JPC Proxy Error:', error.message);
-      res.status(500).json({ 
-        error: 'Proxy failed', 
-        message: error.message,
-        details: error.response?.data
-      });
-    }
-  });
-
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
@@ -176,7 +140,7 @@ async function startServer() {
     console.log(`Production mode: serving static files from ${distPath}`);
     
     app.use(express.static(distPath));
-    app.get('(.*)', (req, res) => {
+    app.get('*all', (req, res) => {
       const indexPath = path.join(distPath, 'index.html');
       if (fs.existsSync(indexPath)) {
         res.sendFile(indexPath);
