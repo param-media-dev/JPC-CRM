@@ -50,7 +50,8 @@ export const Team: React.FC = () => {
     setIsLoading(true);
     try {
       const data = await apiService.getUsers();
-      setTeam(Array.isArray(data) ? data : []);
+      console.log('Fetched team data:', data);
+      setTeam(Array.isArray(data) ? data : (data as any)?.data || []);
     } catch (error) {
       console.error('Failed to fetch team:', error);
     } finally {

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ToastProvider } from './contexts/ToastContext';
@@ -20,13 +21,13 @@ import { InterviewSupport } from './pages/InterviewSupport';
 import { AddCandidateModal } from './components/AddCandidateModal';
 import { NotificationList } from './components/NotificationList';
 import { SLAMonitor } from './components/SLAMonitor';
-import { seedData } from './services/seeding';
 import { migrateAllChecklists, testConnection } from './services/storage';
 import { Plus, Menu } from 'lucide-react';
 
 const AppContent: React.FC = () => {
   const { user, isLoading, isAuthReady } = useAuth();
-  const [currentHash, setCurrentHash] = useState(window.location.hash || '#dashboard');
+  const location = useLocation();
+  const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
@@ -37,30 +38,23 @@ const AppContent: React.FC = () => {
   }, [isAuthReady, user]);
 
   useEffect(() => {
-    const handleHashChange = () => {
-      setCurrentHash(window.location.hash || '#dashboard');
-      window.scrollTo(0, 0);
-    };
-
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+    window.scrollTo(0, 0);
+  }, [location.pathname]);
 
   useEffect(() => {
     if (isAuthReady && user) {
       if (user.role === 'candidate' && user.candidate_id) {
-        const targetHash = `#candidate?id=${user.candidate_id}`;
-        if (window.location.hash !== targetHash) {
-          window.location.hash = targetHash;
+        const targetPath = `/candidate/${user.candidate_id}`;
+        if (location.pathname !== targetPath) {
+          navigate(targetPath);
         }
       }
       
-      // Only run maintenance tasks for administrators
       if (user.role === 'administrator' || user.role === 'jpc_sysadmin') {
         migrateAllChecklists().catch(console.error);
       }
     }
-  }, [isAuthReady, user]);
+  }, [isAuthReady, user, location.pathname, navigate]);
 
   if (isLoading) {
     return (
@@ -75,60 +69,37 @@ const AppContent: React.FC = () => {
   }
 
   const renderPage = () => {
-    const hash = currentHash.split('?')[0];
+    const path = location.pathname;
     
     if (user?.role === 'candidate' || user?.role === 'jpc_candidate') {
-      switch (hash) {
-        case '#dashboard': return <CandidateDashboard />;
-        case '#candidate': return <CandidateDetail />;
-        case '#receipt': return <Receipt />;
-        default: return <CandidateDashboard />;
-      }
+      if (path.startsWith('/candidate')) return <CandidateDetail />;
+      if (path === '/receipt') return <Receipt />;
+      return <CandidateDashboard />;
     }
 
-    switch (hash) {
-      case '#dashboard': 
-        return <Dashboard />;
-      case '#pipeline': 
-        if (user?.role === 'candidate') return <CandidateDetail />;
-        if (user?.role !== 'administrator' && user?.role !== 'jpc_sysadmin' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_cs' && user?.role !== 'jpc_recruiter' && user?.role !== 'jpc_marketing' && user?.role !== 'jpc_marketing_support' && user?.role !== 'jpc_sales') return <Dashboard />;
-        return <Pipeline />;
-      case '#candidates': 
-        if (user?.role === 'candidate') return <CandidateDetail />;
-        return <Candidates />;
-      case '#candidate': return <CandidateDetail />;
-      case '#followups': 
-        if (user?.role === 'candidate') return <CandidateDetail />;
-        return <FollowUps />;
-      case '#not-interested': 
-        if (user?.role !== 'administrator' && user?.role !== 'jpc_sysadmin' && user?.role !== 'jpc_manager') return <Dashboard />;
-        return <NotInterested />;
-      case '#team': 
-        if (user?.role !== 'administrator' && user?.role !== 'jpc_sysadmin' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_marketing') return <Dashboard />;
-        return <Team />;
-      case '#receipt': return <Receipt />;
-      case '#applications': 
-        if (user?.role !== 'administrator' && user?.role !== 'jpc_sysadmin' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_cs' && user?.role !== 'jpc_recruiter') return <Dashboard />;
-        return <AppTracker />;
-      case '#resume-log': 
-        if (user?.role !== 'administrator' && user?.role !== 'jpc_sysadmin' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_cs' && user?.role !== 'jpc_recruiter' && user?.role !== 'jpc_resume' && user?.role !== 'jpc_marketing') return <Dashboard />;
-        return <ResumeLogBook />;
-      case '#interviews': 
-        if (user?.role !== 'administrator' && user?.role !== 'jpc_sysadmin' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_cs' && user?.role !== 'jpc_recruiter' && user?.role !== 'jpc_proxy') return <Dashboard />;
-        return <InterviewSupport />;
+    switch (path) {
+      case '/dashboard': return <Dashboard />;
+      case '/pipeline': return <Pipeline />;
+      case '/candidates': return <Candidates />;
+      case '/followups': return <FollowUps />;
+      case '/not-interested': return <NotInterested />;
+      case '/team': return <Team />;
+      case '/receipt': return <Receipt />;
+      case '/applications': return <AppTracker />;
+      case '/resume-log': return <ResumeLogBook />;
+      case '/interviews': return <InterviewSupport />;
       default: 
-        if (user?.role === 'candidate') return <CandidateDetail />;
+        if (path.startsWith('/candidate')) return <CandidateDetail />;
         return <Dashboard />;
     }
   };
 
-  const isReceiptPage = currentHash.startsWith('#receipt');
+  const isReceiptPage = location.pathname.startsWith('/receipt');
 
   return (
     <div className="min-h-screen bg-bg-primary flex">
       {!isReceiptPage && (
         <Sidebar 
-          currentHash={currentHash} 
           isOpen={isSidebarOpen} 
           setIsOpen={setIsSidebarOpen} 
         />
@@ -175,7 +146,7 @@ const AppContent: React.FC = () => {
         isOpen={isAddModalOpen} 
         onClose={() => setIsAddModalOpen(false)}
         onSuccess={() => {
-          window.dispatchEvent(new HashChangeEvent('hashchange'));
+          window.location.reload();
         }}
       />
     </div>
@@ -184,14 +155,16 @@ const AppContent: React.FC = () => {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <DataProvider>
-          <ToastProvider>
-            <AppContent />
-          </ToastProvider>
-        </DataProvider>
-      </AuthProvider>
-    </ThemeProvider>
+    <BrowserRouter>
+      <ThemeProvider>
+        <AuthProvider>
+          <DataProvider>
+            <ToastProvider>
+              <AppContent />
+            </ToastProvider>
+          </DataProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </BrowserRouter>
   );
 }
