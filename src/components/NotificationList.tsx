@@ -7,6 +7,38 @@ import { Notification as AppNotification } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { cn } from '../lib/utils';
 
+const playNotificationSound = () => {
+  try {
+    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+
+    const playNote = (freq: number, startTime: number, duration: number) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, startTime);
+      
+      gain.gain.setValueAtTime(0, startTime);
+      gain.gain.linearRampToValueAtTime(0.15, startTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+      
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      
+      osc.start(startTime);
+      osc.stop(startTime + duration);
+    };
+
+    // A pleasant two-tone chime
+    playNote(523.25, ctx.currentTime, 0.3); // C5
+    playNote(659.25, ctx.currentTime + 0.1, 0.4); // E5
+
+  } catch (error) {
+    console.warn('Audio playback failed', error);
+  }
+};
+
 export const NotificationList: React.FC = () => {
   const { user } = useAuth();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -31,20 +63,27 @@ export const NotificationList: React.FC = () => {
     return subscribeToQuery<AppNotification>(q, (data) => {
       // Check for new notifications to trigger push
       try {
-        if (!isInitialLoad.current && 'Notification' in window && Notification.permission === 'granted') {
+        if (!isInitialLoad.current) {
           const prevIds = new Set(prevNotificationsRef.current.map(n => n.id));
           const newNotifications = data.filter(n => !prevIds.has(n.id));
           
-          newNotifications.forEach(n => {
-            // Don't show push for notifications created more than 1 minute ago
-            const isRecent = (new Date().getTime() - new Date(n.created_at).getTime()) < 60000;
-            if (isRecent) {
-              new Notification('New Placify Alert', {
-                body: n.message,
-                icon: '/favicon.ico' // fallback icon
-              });
-            }
-          });
+          if (newNotifications.length > 0) {
+            // Play sound if there are new notifications
+            playNotificationSound();
+          }
+
+          if ('Notification' in window && Notification.permission === 'granted') {
+            newNotifications.forEach(n => {
+              // Don't show push for notifications created more than 1 minute ago
+              const isRecent = (new Date().getTime() - new Date(n.created_at).getTime()) < 60000;
+              if (isRecent) {
+                new Notification('New Placify Alert', {
+                  body: n.message,
+                  icon: '/favicon.ico' // fallback icon
+                });
+              }
+            });
+          }
         }
       } catch (error) {
         console.warn('Push notifications are not supported in this context:', error);
