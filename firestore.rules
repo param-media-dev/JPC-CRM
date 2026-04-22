@@ -14,10 +14,6 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isEmailVerified() {
-      return isSignedIn() && request.auth.token.email_verified == true;
-    }
-
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
@@ -43,18 +39,25 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isEmailVerified() && (
+      return isSignedIn() && (
         request.auth.token.email == "paramatwork3076@gmail.com" ||
         (hasUserDoc(request.auth.uid) && getUserData(request.auth.uid).role in ['administrator', 'jpc_sysadmin'])
       );
     }
 
     function isManager() {
-      return isEmailVerified() && hasUserDoc(request.auth.uid) && getUserData(request.auth.uid).role == 'jpc_manager';
+      return isSignedIn() && hasUserDoc(request.auth.uid) && getUserData(request.auth.uid).role == 'jpc_manager';
     }
 
     function isRecruiter() {
-      return isEmailVerified() && hasUserDoc(request.auth.uid) && getUserData(request.auth.uid).role == 'jpc_recruiter';
+      return isSignedIn() && hasUserDoc(request.auth.uid) && getUserData(request.auth.uid).role == 'jpc_recruiter';
+    }
+
+    function isStaff() {
+      return isSignedIn() && (
+        request.auth.token.email == "paramatwork3076@gmail.com" ||
+        (hasUserDoc(request.auth.uid) && !(getUserData(request.auth.uid).role in ['candidate', 'jpc_candidate']))
+      );
     }
 
     // ===============================================================
@@ -101,18 +104,17 @@ service cloud.firestore {
 
     // jpc_candidates
     match /jpc_candidates/{candidateId} {
-      allow get: if isSignedIn();
+      allow get: if isSignedIn() && (
+        isStaff() || resource.data.email == request.auth.token.email || resource.data.id == request.auth.uid
+      );
       allow list: if isSignedIn() && (
-        isAdmin() || isManager() || isRecruiter() ||
-        resource.data.email == request.auth.token.email
+        isStaff() || resource.data.email == request.auth.token.email
       );
       
-      allow create: if isSignedIn() && (
-        isAdmin() || isManager() || isRecruiter()
-      ) && isValidCandidate(incoming());
+      allow create: if isSignedIn() && isStaff() && isValidCandidate(incoming());
       
       allow update: if isSignedIn() && (
-        isAdmin() || isManager() || isRecruiter() ||
+        isStaff() ||
         (existing().email == request.auth.token.email && incoming().diff(existing()).affectedKeys().hasOnly(['full_name', 'phone']))
       ) && isValidCandidate(incoming());
       
@@ -121,29 +123,54 @@ service cloud.firestore {
 
     // jpc_applications
     match /jpc_applications/{appId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
+      allow get: if isSignedIn() && (isStaff() || resource.data.candidate_id == request.auth.uid);
+      allow list: if isSignedIn() && (isStaff() || resource.data.candidate_id == request.auth.uid);
+      allow create: if isSignedIn() && isStaff();
       allow update, delete: if isAdmin() || isManager();
     }
 
     // jpc_notifications
     match /jpc_notifications/{notifId} {
-      allow get: if isSignedIn() && (request.auth.uid == resource.data.recipient_id || isAdmin());
-      allow list: if isSignedIn() && (request.auth.uid == resource.data.recipient_id || isAdmin());
-      allow create: if isSignedIn();
-      allow update: if isSignedIn() && (request.auth.uid == resource.data.recipient_id || isAdmin());
-      allow delete: if isAdmin();
+      allow get: if isSignedIn() && (request.auth.uid == resource.data.recipient_id || isAdmin() || isStaff());
+      allow list: if isSignedIn() && (request.auth.uid == resource.data.recipient_id || isAdmin() || isStaff());
+      allow create: if isSignedIn() && isStaff();
+      allow update: if isSignedIn() && (request.auth.uid == resource.data.recipient_id || isStaff());
+      allow delete: if isAdmin() || isManager();
     }
 
-    // Other collections
-    match /jpc_resume_requests/{requestId} { allow read, write: if isSignedIn(); }
-    match /jpc_report_logs/{logId} { allow read, write: if isSignedIn(); }
-    match /jpc_activity_logs/{logId} { allow read, write: if isSignedIn(); }
-    match /jpc_followups/{followId} { allow read, write: if isSignedIn(); }
-    match /jpc_payments/{paymentId} { allow read, write: if isSignedIn(); }
-    match /jpc_promises/{promiseId} { allow read, write: if isSignedIn(); }
-    match /jpc_qc_checklist/{itemId} { allow read, write: if isSignedIn(); }
-    match /jpc_interviews/{interviewId} { allow read, write: if isSignedIn(); }
+    // Other collections - Staff can read/write, Candidates can read their own if applicable
+    
+    match /jpc_resume_requests/{requestId} { 
+      allow read: if isSignedIn() && (isStaff() || resource.data.candidate_id == request.auth.uid);
+      allow write: if isSignedIn() && isStaff(); 
+    }
+    match /jpc_report_logs/{logId} { 
+      allow read, write: if isSignedIn() && isStaff(); 
+    }
+    match /jpc_activity_logs/{logId} { 
+      allow read: if isSignedIn() && (isStaff() || resource.data.candidate_id == request.auth.uid);
+      allow write: if isSignedIn() && isStaff(); 
+    }
+    match /jpc_followups/{followId} { 
+      allow read: if isSignedIn() && (isStaff() || resource.data.candidate_id == request.auth.uid);
+      allow write: if isSignedIn() && isStaff(); 
+    }
+    match /jpc_payments/{paymentId} { 
+      allow read: if isSignedIn() && (isStaff() || resource.data.candidate_id == request.auth.uid);
+      allow write: if isSignedIn() && isStaff(); 
+    }
+    match /jpc_promises/{promiseId} { 
+      allow read: if isSignedIn() && (isStaff() || resource.data.candidate_id == request.auth.uid);
+      allow write: if isSignedIn() && isStaff(); 
+    }
+    match /jpc_qc_checklist/{itemId} { 
+      allow read: if isSignedIn() && (isStaff() || resource.data.candidate_id == request.auth.uid);
+      allow write: if isSignedIn() && (isStaff() || resource.data.candidate_id == request.auth.uid); 
+    }
+    match /jpc_interviews/{interviewId} { 
+      allow read: if isSignedIn() && (isStaff() || resource.data.candidate_id == request.auth.uid);
+      allow write: if isSignedIn() && isStaff(); 
+    }
     
     // Connectivity test
     match /_connection_test_/{docId} {
