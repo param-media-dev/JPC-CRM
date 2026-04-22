@@ -3,7 +3,7 @@ export const uploadFile = async (file: File): Promise<string> => {
   formData.append('file', file);
 
   try {
-    const response = await fetch('https://test-wp.param.club/wp-json/file-api/v1/upload', {
+    const response = await fetch('/api/upload', {
       method: 'POST',
       body: formData,
     });

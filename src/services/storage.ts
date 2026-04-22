@@ -59,27 +59,7 @@ export const getUserById = async (id: string | number): Promise<User | null> => 
 
 export const getUsers = async (): Promise<User[]> => {
   try {
-    let allUsers: User[] = [];
-    let currentPage = 1;
-    let totalPages = 1;
-
-    do {
-      const response = await apiService.request(`/users?page=${currentPage}`);
-      
-      let users: User[] = [];
-      if (Array.isArray(response)) {
-        users = response;
-        totalPages = 1;
-      } else if (response && typeof response === 'object' && Array.isArray((response as any).data)) {
-        users = (response as any).data;
-        totalPages = (response as any).total_pages || 1;
-      }
-      
-      allUsers = [...allUsers, ...users];
-      currentPage++;
-    } while (currentPage <= totalPages);
-    
-    return allUsers;
+    return await apiService.getUsers();
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, 'users');
     return [];

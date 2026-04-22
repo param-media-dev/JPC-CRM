@@ -1,6 +1,6 @@
 import { Candidate, User, Payment, FollowUp, InterviewRequest, ActivityLog, Application, Notification as AppNotification } from '../types';
 
-const BASE_URL = 'https://test-wp.param.club/wp-json/jpc/v1';
+const BASE_URL = '/api/jpc';
 
 class ApiService {
   private token: string | null = localStorage.getItem('jpc_auth_token');
@@ -132,8 +132,33 @@ class ApiService {
   }
 
   // Users
-  async getUsers() {
-    return this.request('/users');
+  async getUsers(): Promise<User[]> {
+    let allUsers: User[] = [];
+    let currentPage = 1;
+    let totalPages = 1;
+
+    try {
+      do {
+        const response = await this.request(`/users?page=${currentPage}`);
+        
+        let users: User[] = [];
+        if (Array.isArray(response)) {
+          users = response;
+          totalPages = 1;
+        } else if (response && typeof response === 'object' && Array.isArray((response as any).data)) {
+          users = (response as any).data;
+          totalPages = (response as any).total_pages || 1;
+        }
+        
+        allUsers = [...allUsers, ...users];
+        currentPage++;
+      } while (currentPage <= totalPages);
+      
+      return allUsers;
+    } catch (error) {
+      console.error('Error fetching all users:', error);
+      return [];
+    }
   }
 
   async getUser(id: string | number) {
