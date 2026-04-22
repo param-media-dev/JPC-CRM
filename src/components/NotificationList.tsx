@@ -7,32 +7,72 @@ import { Notification as AppNotification } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { cn } from '../lib/utils';
 
+// Global audio context to avoid being blocked by autoplay policies
+let audioCtx: AudioContext | null = null;
+
+const initAudio = () => {
+  if (typeof window === 'undefined') return;
+  try {
+    if (!audioCtx) {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioContextClass) {
+        audioCtx = new AudioContextClass();
+      }
+    }
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume().catch(e => console.warn("Could not resume audio", e));
+    }
+  } catch (error) {
+    console.warn("Audio initialization failed", error);
+  }
+};
+
 const playNotificationSound = () => {
   try {
-    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioContext) return;
-    const ctx = new AudioContext();
+    if (!audioCtx) initAudio();
+    if (!audioCtx) return;
+    
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
 
-    const playNote = (freq: number, startTime: number, duration: number) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, startTime);
+    const t = audioCtx.currentTime;
+    
+    // Helper to create a single "glassy" pluck with layered detuned oscillators
+    const createPluck = (freq: number, startTime: number, decayTime: number, volume: number) => {
+      // Main clear tone
+      const osc1 = audioCtx.createOscillator();
+      osc1.type = 'sine';
+      osc1.frequency.value = freq;
+
+      // Slightly higher pitched triangle wave for a "glassy/metallic" overtone edge
+      const osc2 = audioCtx.createOscillator();
+      osc2.type = 'triangle';
+      osc2.frequency.value = freq * 1.015; // 1.5% detune creates a shimmering chorus effect
+
+      const gain = audioCtx.createGain();
       
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(audioCtx.destination);
+
+      // Fast attack, smooth exponential fade out (like hitting crystal)
       gain.gain.setValueAtTime(0, startTime);
-      gain.gain.linearRampToValueAtTime(0.15, startTime + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
-      
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      
-      osc.start(startTime);
-      osc.stop(startTime + duration);
+      gain.gain.linearRampToValueAtTime(volume, startTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + decayTime);
+
+      osc1.start(startTime);
+      osc2.start(startTime);
+      osc1.stop(startTime + decayTime);
+      osc2.stop(startTime + decayTime);
     };
 
-    // A pleasant two-tone chime
-    playNote(523.25, ctx.currentTime, 0.3); // C5
-    playNote(659.25, ctx.currentTime + 0.1, 0.4); // E5
+    // --- RARE "CRYSTALLINE TWINKLE" NOTIFICATION ---
+    // A rapid, magical 3-note ascending arpeggio using high frequencies
+    
+    createPluck(1046.50, t, 0.4, 0.15);         // C6
+    createPluck(1567.98, t + 0.08, 0.6, 0.15);  // G6
+    createPluck(2349.32, t + 0.16, 1.2, 0.15);  // D7 (Longer ringing tail)
 
   } catch (error) {
     console.warn('Audio playback failed', error);
@@ -47,6 +87,15 @@ export const NotificationList: React.FC = () => {
   const isInitialLoad = useRef(true);
 
   useEffect(() => {
+    // Unlock audio on first global user interaction
+    const unlockAudio = () => {
+      initAudio();
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+    };
+    window.addEventListener('click', unlockAudio);
+    window.addEventListener('keydown', unlockAudio);
+
     // Request notification permission on mount
     try {
       if ('Notification' in window && Notification.permission === 'default') {
@@ -55,6 +104,11 @@ export const NotificationList: React.FC = () => {
     } catch (error) {
       console.warn('Push notifications are not supported in this context:', error);
     }
+    
+    return () => {
+      window.removeEventListener('click', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+    };
   }, []);
 
   useEffect(() => {
