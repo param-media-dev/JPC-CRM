@@ -30,6 +30,22 @@ export const TRANSITIONS: Record<Stage, Stage[]> = {
   not_interested:      [],
 };
 
+// Maps a stage to its logical previous stage, allowing users to move a candidate back if moved by mistake
+export const PREVIOUS_STAGES: Record<Stage, Stage | null> = {
+  lead_generation:     null,
+  sales:               'lead_generation',
+  cs_qc:               'sales',
+  marketing_leader:    'cs_qc',
+  resume_team:         'marketing_leader',
+  cs_assign_recruiter: 'resume_team',
+  recruiter:           'cs_assign_recruiter',
+  sys_admin:           'recruiter',
+  marketing_active:    'sys_admin',
+  application_tracking: 'marketing_active',
+  completed:           'application_tracking',
+  not_interested:      null, // Usually moved to from Sales, but could be anywhere, so let's keep it null for back tracking (or handle specifically)
+};
+
 export const ROLE_PERMISSIONS: Record<Role, { allowedStages: Stage[] | 'ALL'; adminFeatures?: boolean; teamManagement?: boolean }> = {
   administrator: { allowedStages: 'ALL', adminFeatures: true, teamManagement: true },
   jpc_manager: { allowedStages: 'ALL', teamManagement: true },

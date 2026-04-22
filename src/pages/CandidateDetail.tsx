@@ -19,7 +19,7 @@ import {
 import { uploadFile } from '../services/fileService';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { STAGES, TRANSITIONS, LEAD_SOURCES, ROLE_PERMISSIONS } from '../constants';
+import { STAGES, TRANSITIONS, LEAD_SOURCES, ROLE_PERMISSIONS, PREVIOUS_STAGES } from '../constants';
 import { 
   ArrowLeft, 
   Edit2, 
@@ -84,6 +84,7 @@ export const CandidateDetail: React.FC = () => {
   const canManageFollowUps = !isCandidate && !isLeadGen;
   const canManageRemarks = !isCandidate && !isLeadGen;
   const canManageAgreement = user?.role === 'jpc_cs' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager';
+  const canDelete = user?.role === 'administrator' || user?.role === 'jpc_sysadmin';
 
   const [candidate, setCandidate] = useState<Candidate | null>(null);
 
@@ -584,39 +585,50 @@ export const CandidateDetail: React.FC = () => {
     }
   };
 
-  const handleStageMove = async (newStage: Stage) => {
-    if (user?.role === 'jpc_cs' && !candidate.agreement_url) {
+  const handleStageMove = async (newStage: Stage, isUndo = false) => {
+    if (!isUndo && user?.role === 'jpc_cs' && !candidate.agreement_url) {
       showToast('Agreement must be uploaded before moving to another step.', 'error');
       return;
     }
 
-    const oldStageLabel = STAGES[candidate.current_stage].label;
-    const newStageLabel = STAGES[newStage].label;
-    
-    const updated = { 
-      ...candidate, 
-      current_stage: newStage,
-      not_interested_at: newStage === 'not_interested' ? now() : null,
-      flags: {
-        ...(candidate.flags || {}),
-        sla_timeout_notified: false
+    try {
+      const oldStageLabel = STAGES[candidate.current_stage].label;
+      const newStageLabel = STAGES[newStage].label;
+      
+      const updated = { 
+        ...candidate, 
+        current_stage: newStage,
+        not_interested_at: newStage === 'not_interested' ? now() : null,
+        flags: {
+          ...(candidate.flags || {}),
+          sla_timeout_notified: false
+        }
+      };
+      
+      await saveCandidate(updated, user?.id || null);
+      
+      const teamMembers = [candidate.assigned_sales, candidate.assigned_cs, candidate.assigned_recruiter].filter(Boolean);
+      for (const memberId of teamMembers) {
+        if (!memberId) continue;
+        try {
+          await addNotification({
+            recipient_id: memberId as string,
+            sender_id: user?.id || null,
+            type: 'system_alert',
+            message: `Candidate ${candidate.full_name} moved from ${oldStageLabel} to ${newStageLabel}.`
+          });
+        } catch (e) {}
       }
-    };
-    
-    await saveCandidate(updated, user?.id || null);
-    
-    const teamMembers = [candidate.assigned_sales, candidate.assigned_cs, candidate.assigned_recruiter].filter(Boolean);
-    for (const memberId of teamMembers) {
-      await addNotification({
-        recipient_id: memberId as string,
-        sender_id: user?.id || null,
-        type: 'system_alert',
-        message: `Candidate ${candidate.full_name} moved from ${oldStageLabel} to ${newStageLabel}.`
-      });
-    }
 
-    await logActivity(candidate.id, 'Stage moved', `Moved from ${oldStageLabel} to ${newStageLabel}`, user?.id || null);
-    showToast(`Moved to ${newStageLabel}`, 'success');
+      try {
+        await logActivity(candidate.id, 'Stage moved', `Moved from ${oldStageLabel} to ${newStageLabel}`, user?.id || null);
+      } catch (e) {}
+      
+      showToast(`Moved to ${newStageLabel}`, 'success');
+    } catch (err: any) {
+      console.error(err);
+      showToast('Failed to change stage: ' + (err.message || 'Permission denied'), 'error');
+    }
   };
 
   const handleToggleFlag = async (flag: keyof Candidate['flags']) => {
@@ -787,10 +799,10 @@ export const CandidateDetail: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {user?.role === 'administrator' && (
+          {canDelete && (
             <button 
               onClick={async () => {
-                if (window.confirm("CRITICAL WARNING: This will permanently delete this candidate and all associated data (interviews, payments, etc.). Are you absolutely sure?")) {
+                if (window.confirm("WARNING: This will permanently delete this candidate. Are you absolutely sure?")) {
                   try {
                     await deleteCandidate(candidate.id);
                     showToast('Candidate completely deleted', 'success');
@@ -892,6 +904,25 @@ export const CandidateDetail: React.FC = () => {
         <div className="bg-bg-secondary border border-border-primary rounded-2xl p-4 flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-xs font-bold text-text-muted uppercase tracking-widest mr-2">Move to Stage:</span>
+            {PREVIOUS_STAGES[candidate.current_stage] && (
+              <button
+                onClick={async () => {
+                  try {
+                    if (window.confirm(`Are you sure you want to revert this candidate back to ${STAGES[PREVIOUS_STAGES[candidate.current_stage]!].label}?`)) {
+                      await handleStageMove(PREVIOUS_STAGES[candidate.current_stage]!, true);
+                    }
+                  } catch (e) {
+                    showToast('Failed to revert', 'error');
+                  }
+                }}
+                className="px-3 py-2 bg-bg-tertiary border border-border-primary rounded-xl text-sm font-bold text-text-muted hover:border-text-primary hover:text-text-primary transition-all flex items-center gap-2"
+                title="Revert to previous stage"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Undo
+              </button>
+            )}
+            
             {TRANSITIONS[candidate.current_stage].map(stageKey => {
               const isDisabled = user?.role === 'jpc_cs' && !candidate.agreement_url;
               return (
