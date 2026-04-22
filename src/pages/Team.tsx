@@ -49,9 +49,30 @@ export const Team: React.FC = () => {
     if (!isAuthReady) return;
     setIsLoading(true);
     try {
-      const data = await apiService.getUsers();
-      console.log('Fetched team data:', data);
-      setTeam(Array.isArray(data) ? data : (data as any)?.data || []);
+      let allUsers: User[] = [];
+      let currentPage = 1;
+      let totalPages = 1;
+
+      // Fetch all pages
+      do {
+        const response = await apiService.request(`/users?page=${currentPage}`);
+        console.log(`Fetched team data (page ${currentPage}):`, response);
+        
+        let users: User[] = [];
+        if (Array.isArray(response)) {
+          users = response;
+          // If response is just an array, we can't detect pagination, assume 1 page
+          totalPages = 1;
+        } else if (response && typeof response === 'object' && Array.isArray((response as any).data)) {
+          users = (response as any).data;
+          totalPages = (response as any).total_pages || 1;
+        }
+        
+        allUsers = [...allUsers, ...users];
+        currentPage++;
+      } while (currentPage <= totalPages);
+      
+      setTeam(allUsers);
     } catch (error) {
       console.error('Failed to fetch team:', error);
     } finally {
@@ -65,13 +86,20 @@ export const Team: React.FC = () => {
 
   const visibleTeam = useMemo(() => {
     if (!user) return [];
+    console.log('Diagnostic: Team filtering active. User:', user.display_name, 'Role:', user.role, 'Total team size:', team.length);
+    
     if (user.role === 'administrator' || user.role === 'jpc_sysadmin' || user.role === 'jpc_manager') {
+      console.log('Diagnostic: User is admin/manager, returning full team.');
       return team;
     }
     if (user.role === 'jpc_marketing') {
-      return team.filter(u => String(u.leader_id) === String(user.id) || u.id === user.id);
+      const filtered = team.filter(u => String(u.leader_id) === String(user.id) || u.id === user.id);
+      console.log('Diagnostic: User is marketing, returning filtered team size:', filtered.length);
+      return filtered;
     }
-    return team.filter(u => u.id === user.id);
+    const filtered = team.filter(u => u.id === user.id);
+    console.log('Diagnostic: User is restricted, returning team size:', filtered.length);
+    return filtered;
   }, [team, user]);
 
   const canManage = (targetRole: UserRole) => {
@@ -163,7 +191,35 @@ export const Team: React.FC = () => {
     const USERS_TO_CREATE = [
       { display_name: "Yash Pandya", email: "yash.pandya@auriic.co", password: "Auriic@1031", role: "jpc_sysadmin", username: "yash.pandya" },
       { display_name: "Faiz Ahmadi", email: "care@auriic.co", password: "Auriic@1031", role: "jpc_cs", username: "care" },
-      // ... same list
+      { display_name: "Pritesh chauhan", email: "pritesh.chauhan@auriic.co", password: "Auriic@1031", role: "administrator", username: "pritesh.chauhan" },
+      { display_name: "Khushi Patel", email: "khushi.patel@auriic.co", password: "Kp@Auriic1301", role: "jpc_marketing", username: "khushi.patel" },
+      { display_name: "Bharat Dhrangiya", email: "bharat.dhrangiya@auriic.co", password: "Bd@Auriic1301", role: "jpc_marketing", username: "bharat.dhrangiya" },
+      { display_name: "Vakas Panja", email: "vakas.panja@auriic.co", password: "Vp@Auriic1301", role: "jpc_sales", username: "vakas.panja" },
+      { display_name: "Tirth Bhatt", email: "tirth.bhatt@auriic.co", password: "Tb@Auriic1301", role: "jpc_sales", username: "tirth.bhatt" },
+      { display_name: "Pratik Shah", email: "pratik.shah@auriic.co", password: "Ps@Auriic1301", role: "jpc_sales", username: "pratik.shah" },
+      { display_name: "Tanya Bhalla", email: "tanyabhalla@auriic.co", password: "Tb@Auriic1301", role: "jpc_sales", username: "tanyabhalla" },
+      { display_name: "Hemant Gokhale", email: "hemant.gokhale@auriic.co", password: "Hg@Auriic1301", role: "jpc_resume", username: "hemant.gokhale" },
+      { display_name: "Nihal Khalyani", email: "nihal.khalyani@auriic.co", password: "Nk@Auriic1301", role: "jpc_resume", username: "nihal.khalyani" },
+      { display_name: "Mohit Panchal", email: "mohit.panchal@auriic.co", password: "Mp@Auric1301", role: "jpc_marketing", username: "mohit.panchal" },
+      { display_name: "Nikhil Sevak", email: "nikhil.sevak@auriic.co", password: "Ns@Auric1301", role: "jpc_marketing", username: "nikhil.sevak" },
+      { display_name: "Vansh Patel", email: "vansh.patel@auriic.co", password: "Vp@Auriic1301", role: "jpc_recruiter", username: "vansh.patel" },
+      { display_name: "Siddharth Kamdar", email: "siddharth.kamdar@auriic.co", password: "Sk@Auriic1301", role: "jpc_recruiter", username: "siddharth.kamdar" },
+      { display_name: "Deep Kansara", email: "deep.kansara@auriic.co", password: "Dk@Auriic1301", role: "jpc_recruiter", username: "deep.kansara" },
+      { display_name: "Jay Unnarkar", email: "jay.unnarkar@auriic.co", password: "Ju@Auriic1301", role: "jpc_recruiter", username: "jay.unnarkar" },
+      { display_name: "Aamin Padharshi", email: "aamin.padharshi@auriic.co", password: "Ap@Auriic1301", role: "jpc_recruiter", username: "aamin.padharshi" },
+      { display_name: "Amir Khalyani", email: "amir.khalyani@auriic.co", password: "Ak@Auriic1301", role: "jpc_recruiter", username: "amir.khalyani" },
+      { display_name: "Arman Parmar", email: "arman.parmar@auriic.co", password: "Ap@Auriic1301", role: "jpc_recruiter", username: "arman.parmar" },
+      { display_name: "Romil Vadiya", email: "romil.vadiya@auriic.co", password: "Rv@Auriic1301", role: "jpc_recruiter", username: "romil.vadiya" },
+      { display_name: "Manav Nagar", email: "manav.nagar@auriic.co", password: "Mn@Auriic1301", role: "jpc_recruiter", username: "manav.nagar" },
+      { display_name: "Snohi Vairagi", email: "snohi.vairagi@auriic.co", password: "Sv@Auriic1301", role: "jpc_recruiter", username: "snohi.vairagi" },
+      { display_name: "Janvi Mistry", email: "janvi.mistry@auriic.co", password: "Jm@Auriic1301", role: "jpc_recruiter", username: "janvi.mistry" },
+      { display_name: "Payal Tiwari", email: "payal.tiwari@auriic.co", password: "Pt@Auriic1301", role: "jpc_recruiter", username: "payal.tiwari" },
+      { display_name: "Aayushi Fichadiya", email: "aayushi.fichadiya@auriic.co", password: "Af@Auriic1301", role: "jpc_recruiter", username: "aayushi.fichadiya" },
+      { display_name: "Madhavi Paneliya", email: "madhavi.paneliya@auriic.co", password: "Mp@Auriic1301", role: "jpc_recruiter", username: "madhavi.paneliya" },
+      { display_name: "Disha Shrimali", email: "disha.shrimali@auriic.co", password: "Ds@Auriic1301", role: "jpc_recruiter", username: "disha.shrimali" },
+      { display_name: "Avantika Gidhavani", email: "avantika.gidhavani@auriic.co", password: "Ag@Auriic1301", role: "jpc_recruiter", username: "avantika.gidhavani" },
+      { display_name: "Rudra Rawal", email: "rudraks.rawal@auriic.co", password: "Rr@Auriic1301", role: "jpc_proxy", username: "rudraks.rawal" },
+      { display_name: "Apoorva Indrekar", email: "apoorva.indrekar@auriic.co", password: "Ai@Auriic130", role: "jpc_sales", username: "apoorva.indrekar" },
     ];
 
     let createdCount = 0;

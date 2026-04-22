@@ -67,6 +67,42 @@ async function startServer() {
     }
   });
 
+  // Proxy for WP JSON to avoid CORS issues on 401/429 etc.
+  app.use('/api/jpc', async (req, res) => {
+    try {
+      const baseUrl = 'https://test-wp.param.club/wp-json/jpc/v1';
+      // req.path will be the part after /api/jpc
+      const endpoint = req.path;
+      const url = `${baseUrl}${endpoint}`;
+      
+      // Pass along query params
+      const searchParams = new URLSearchParams(req.query as Record<string, string>);
+      const queryString = searchParams.toString();
+      const finalUrl = queryString ? `${url}?${queryString}` : url;
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json'
+      };
+
+      if (req.headers.authorization) {
+        headers['Authorization'] = req.headers.authorization;
+      }
+
+      const response = await axios({
+        method: req.method,
+        url: finalUrl,
+        headers,
+        data: req.method !== 'GET' && req.method !== 'HEAD' ? req.body : undefined,
+        validateStatus: () => true // Resolve all response codes so we can forward them
+      });
+
+      res.status(response.status).json(response.data);
+    } catch (error: any) {
+      console.error('WP Proxy Error:', error.message);
+      res.status(500).json({ message: 'Internal Proxy Error', error: error.message });
+    }
+  });
+
   // Calendly API Proxy
   app.get('/api/calendly/bookings', async (req, res) => {
     try {
@@ -140,7 +176,7 @@ async function startServer() {
     console.log(`Production mode: serving static files from ${distPath}`);
     
     app.use(express.static(distPath));
-    app.get('*all', (req, res) => {
+    app.get('/:path*', (req, res) => {
       const indexPath = path.join(distPath, 'index.html');
       if (fs.existsSync(indexPath)) {
         res.sendFile(indexPath);
