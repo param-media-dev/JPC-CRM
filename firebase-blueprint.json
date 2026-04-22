@@ -1,0 +1,72 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "System users and recruiters",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "display_name": { "type": "string" },
+        "role": { "type": "string" },
+        "email": { "type": "string" }
+      },
+      "required": ["id", "display_name", "role"]
+    },
+    "Candidate": {
+      "title": "Candidate",
+      "description": "Candidate profile details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "full_name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "current_stage": { "type": "string" }
+      },
+      "required": ["id", "full_name"]
+    },
+    "Application": {
+      "title": "Application",
+      "description": "Job application tracking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "candidate_id": { "type": "string" },
+        "recruiter_id": { "type": "string" },
+        "job_link": { "type": "string" },
+        "applied_at": { "type": "string" }
+      },
+      "required": ["id", "candidate_id", "job_link"]
+    }
+  },
+  "firestore": {
+    "jpc_users": {
+      "schema": "User",
+      "description": "Collection of system users"
+    },
+    "jpc_candidates": {
+      "schema": "Candidate",
+      "description": "Collection of candidates"
+    },
+    "jpc_applications": {
+      "schema": "Application",
+      "description": "Collection of job applications"
+    },
+    "jpc_notifications": {
+      "schema": "object",
+      "description": "System notifications"
+    },
+    "jpc_report_logs": {
+      "schema": "object",
+      "description": "Reporting logs"
+    },
+    "jpc_activity_logs": {
+      "schema": "object",
+      "description": "Activity logs for candidates"
+    },
+    "jpc_resume_requests": {
+      "schema": "object",
+      "description": "Resume change requests"
+    }
+  }
+}

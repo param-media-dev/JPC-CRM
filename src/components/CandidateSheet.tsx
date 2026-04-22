@@ -1,5 +1,4 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, 
@@ -23,7 +22,6 @@ interface CandidateSheetProps {
 }
 
 export const CandidateSheet: React.FC<CandidateSheetProps> = ({ candidate, isOpen, onClose }) => {
-  const navigate = useNavigate();
   if (!candidate && isOpen) return null;
 
   return (
@@ -182,7 +180,7 @@ export const CandidateSheet: React.FC<CandidateSheetProps> = ({ candidate, isOpe
               <div className="space-y-3">
                 <button 
                   onClick={() => {
-                    navigate(`/candidate/${candidate.id}`);
+                    window.location.hash = `#candidate?id=${candidate.id}`;
                     onClose();
                   }}
                   className="flex items-center justify-center gap-2 w-full py-4 bg-accent-blue text-white font-bold rounded-2xl hover:bg-accent-blue/90 transition-all shadow-lg shadow-accent-blue/20"

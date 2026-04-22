@@ -29,19 +29,28 @@ export const LoginPage: React.FC = () => {
     setIsLoading(true);
     try {
       if (isResetting) {
-        showToast('Password reset is managed by the system administrator.', 'info');
+        await resetPassword(formData.email);
+        showToast('Password reset email sent! Please check your inbox.', 'success');
         setIsResetting(false);
       } else if (isSignup) {
-        showToast('Signup is restricted. Please contact the administrator for access.', 'info');
+        await signup(formData.email, formData.password, formData.displayName);
+        showToast('Account created successfully!', 'success');
       } else {
-        // Use email as username for the WP login endpoint if necessary, 
-        // or just pass as username assuming the API handles it.
         await login(formData.email, formData.password);
         showToast('Successfully logged in!', 'success');
       }
     } catch (error: any) {
       console.warn('Auth error:', error.message);
-      showToast(error.message || 'Failed to authenticate. Please check your credentials.', 'error');
+      let message = 'Failed to authenticate. Please try again.';
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+        message = 'Invalid email or password. If you haven\'t created an account yet, please Sign Up first.';
+      }
+      if (error.code === 'auth/email-already-in-use') {
+        message = 'This email is already registered. Please Sign In instead.';
+      }
+      if (error.code === 'auth/weak-password') message = 'Password should be at least 6 characters.';
+      if (error.code === 'auth/invalid-email') message = 'Invalid email format.';
+      showToast(message, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -127,11 +136,11 @@ export const LoginPage: React.FC = () => {
               )}
 
               <div className="space-y-1.5">
-                <label className="text-xs font-bold text-text-muted uppercase tracking-widest">Username or Email</label>
+                <label className="text-xs font-bold text-text-muted uppercase tracking-widest">Email Address</label>
                 <div className="relative">
                   <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-text-muted" />
                   <input 
-                    type="text" 
+                    type="email" 
                     required
                     value={formData.email}
                     onChange={e => setFormData({...formData, email: e.target.value})}

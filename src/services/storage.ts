@@ -1,5 +1,20 @@
-import { apiService } from './apiService';
-import { Candidate, Payment, FollowUp, ActivityLog, User, InterviewRequest, Notification as AppNotification } from '../types';
+import { 
+  collection, 
+  doc, 
+  setDoc, 
+  getDoc, 
+  getDocs, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  where, 
+  orderBy, 
+  onSnapshot,
+  getDocFromServer,
+  writeBatch
+} from 'firebase/firestore';
+import { db, auth } from '../firebase';
+import { Candidate, Payment, Promise as PromiseType, QCChecklistItem, FollowUp, ActivityLog, User, Stage, InterviewRequest, Notification as AppNotification } from '../types';
 
 export enum OperationType {
   CREATE = 'create',
@@ -10,231 +25,414 @@ export enum OperationType {
   WRITE = 'write',
 }
 
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId: string | undefined;
+    email: string | null | undefined;
+    emailVerified: boolean | undefined;
+    isAnonymous: boolean | undefined;
+    tenantId: string | null | undefined;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  }
+}
+
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  console.error(`API Error [${operationType}] at ${path}:`, error);
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData.map(provider => ({
+        providerId: provider.providerId,
+        displayName: provider.displayName,
+        email: provider.email,
+        photoUrl: provider.photoURL
+      })) || []
+    },
+    operationType,
+    path
+  }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  
+  if (errInfo.error.includes('Missing or insufficient permissions')) {
+    throw new Error(JSON.stringify(errInfo));
+  } else if (errInfo.error.includes('Quota exceeded')) {
+    // Only alert once per session to avoid spamming the user
+    if (!(window as any).__quotaAlertShown) {
+      alert("Uh oh! The database daily quota limit has been exceeded. The application will pause data syncing until midnight Pacific Time. Please try again tomorrow!");
+      (window as any).__quotaAlertShown = true;
+    }
+  } else {
+    throw new Error(JSON.stringify(errInfo));
+  }
 }
 
 // Helper to test connection
 export async function testConnection() {
   try {
-    await apiService.getStats();
-    console.log("API connection successful.");
+    await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
-    console.error("API connection failed:", error);
+    if(error instanceof Error && error.message.includes('the client is offline')) {
+      console.error("Please check your Firebase configuration. ");
+    }
   }
 }
 
-// Legacy subscription wrappers (now just empty or manual fetch triggers if needed)
+// Generic Data Access
 export const subscribeToCollection = <T>(collectionName: string, callback: (data: T[]) => void) => {
-  // REST API doesn't support subscriptions, so we just trigger one fetch
-  console.warn(`Subscriptions not supported for ${collectionName}. DataContext will handle updates.`);
-  return () => {};
+  const q = query(collection(db, collectionName));
+  return onSnapshot(q, (snapshot) => {
+    const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as T));
+    callback(data);
+  }, (error) => {
+    handleFirestoreError(error, OperationType.GET, collectionName);
+  });
 };
 
 export const subscribeToQuery = <T>(q: any, callback: (data: T[]) => void, collectionName: string) => {
-  return () => {};
+  return onSnapshot(q, (snapshot) => {
+    const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as T));
+    callback(data);
+  }, (error) => {
+    handleFirestoreError(error, OperationType.GET, collectionName);
+  });
 };
 
 // Users
 export const saveUser = async (user: User) => {
   try {
-    if (user.id) {
-      await apiService.updateUser(user.id, user);
-    } else {
-      await apiService.createUser(user);
-    }
+    await setDoc(doc(db, 'jpc_users', String(user.id)), user);
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, `users/${user.id}`);
+    handleFirestoreError(error, OperationType.WRITE, `jpc_users/${user.id}`);
   }
 };
 
 export const getUserById = async (id: string | number): Promise<User | null> => {
   try {
-    return await apiService.getUser(id);
+    const docSnap = await getDoc(doc(db, 'jpc_users', String(id)));
+    return docSnap.exists() ? (docSnap.data() as User) : null;
   } catch (error) {
-    handleFirestoreError(error, OperationType.GET, `users/${id}`);
+    handleFirestoreError(error, OperationType.GET, `jpc_users/${id}`);
     return null;
   }
 };
 
 export const getUsers = async (): Promise<User[]> => {
   try {
-    let allUsers: User[] = [];
-    let currentPage = 1;
-    let totalPages = 1;
-
-    do {
-      const response = await apiService.request(`/users?page=${currentPage}`);
-      
-      let users: User[] = [];
-      if (Array.isArray(response)) {
-        users = response;
-        totalPages = 1;
-      } else if (response && typeof response === 'object' && Array.isArray((response as any).data)) {
-        users = (response as any).data;
-        totalPages = (response as any).total_pages || 1;
-      }
-      
-      allUsers = [...allUsers, ...users];
-      currentPage++;
-    } while (currentPage <= totalPages);
-    
-    return allUsers;
+    const snap = await getDocs(collection(db, 'jpc_users'));
+    return snap.docs.map(d => d.data() as User);
   } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'users');
+    handleFirestoreError(error, OperationType.LIST, 'jpc_users');
     return [];
   }
 };
 
 // Candidates
 export const checkDuplicateCandidate = async (phone: string, email: string, whatsapp: string): Promise<string | null> => {
-  // Check logic moved to backend in REST API typically, or we can fetch and check
-  return null; 
-};
-
-export const saveCandidate = async (candidate: Candidate, userId: string | null): Promise<Candidate | null> => {
   try {
-    // If it has a temporary ID, always create
-    const isNew = !candidate.id || candidate.id.startsWith('temp_') || candidate.id.length < 15;
+    const candidatesRef = collection(db, 'jpc_candidates');
     
-    if (!isNew) {
-      try {
-        const response = await apiService.updateCandidate(candidate.id, candidate);
-        return response;
-      } catch (error: any) {
-        if (error.message && (error.message.includes('Not found') || error.message.includes('404'))) {
-          // Fall through to create if not found
-          console.warn(`Candidate ${candidate.id} not found on server, attempting to create.`);
-        } else {
-          throw error;
-        }
-      }
+    // Check Phone
+    if (phone && phone.trim() !== '') {
+      const pQuery = query(candidatesRef, where('phone', '==', phone.trim()));
+      const snap = await getDocs(pQuery);
+      if (!snap.empty) return `A candidate with the phone number ${phone} already exists.`;
     }
 
-    // Create new candidate
-    const { id, ...candidateData } = candidate;
-    const response = await apiService.createCandidate(candidateData);
-    return response;
+    // Check Email
+    if (email && email.trim() !== '') {
+      const eQuery = query(candidatesRef, where('email', '==', email.trim()));
+      const snap = await getDocs(eQuery);
+      if (!snap.empty) return `A candidate with the email ${email} already exists.`;
+    }
+
+    // Check WhatsApp
+    if (whatsapp && whatsapp.trim() !== '') {
+      const wQuery = query(candidatesRef, where('whatsapp', '==', whatsapp.trim()));
+      const snap = await getDocs(wQuery);
+      if (!snap.empty) return `A candidate with the WhatsApp number ${whatsapp} already exists.`;
+    }
+
+    return null;
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, `candidates/${candidate.id}`);
-    throw error;
+    console.error("Error checking for duplicate candidates:", error);
+    return null;
+  }
+};
+
+export const saveCandidate = async (candidate: Candidate, userId: string | null) => {
+  try {
+    const data = { ...candidate, updated_at: new Date().toISOString() };
+    await setDoc(doc(db, 'jpc_candidates', candidate.id), data);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `jpc_candidates/${candidate.id}`);
   }
 };
 
 export const getCandidateById = async (id: string): Promise<Candidate | null> => {
   try {
-    return await apiService.getCandidate(id);
+    const docSnap = await getDoc(doc(db, 'jpc_candidates', id));
+    return docSnap.exists() ? (docSnap.data() as Candidate) : null;
   } catch (error) {
-    handleFirestoreError(error, OperationType.GET, `candidates/${id}`);
+    handleFirestoreError(error, OperationType.GET, `jpc_candidates/${id}`);
     return null;
   }
 };
 
 export const deleteCandidate = async (id: string) => {
   try {
-    await apiService.deleteCandidate(id);
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'jpc_candidates', id));
+    
+    const collectionsWithCandidateId = [
+      'jpc_payments',
+      'jpc_promises',
+      'jpc_qc_checklist',
+      'jpc_followups',
+      'jpc_activity_logs',
+      'jpc_applications',
+      'jpc_resume_requests',
+      'jpc_interviews',
+      'jpc_users',
+      'jpc_report_logs'
+    ];
+
+    for (const collName of collectionsWithCandidateId) {
+      const q = query(collection(db, collName), where('candidate_id', '==', id));
+      const snapshot = await getDocs(q);
+      snapshot.forEach(d => {
+        batch.delete(d.ref);
+      });
+    }
+
+    await batch.commit();
   } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, `candidates/${id}`);
+    handleFirestoreError(error, OperationType.DELETE, `jpc_candidates/${id}`);
   }
 };
 
 // Payments
 export const addPayment = async (payment: Omit<Payment, 'id' | 'created_at'>) => {
+  const id = generateId();
+  const data = { ...payment, id, created_at: new Date().toISOString() };
   try {
-    await apiService.createPayment(payment);
+    await setDoc(doc(db, 'jpc_payments', id), data);
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, 'payments');
+    handleFirestoreError(error, OperationType.WRITE, `jpc_payments/${id}`);
   }
 };
 
 export const updatePayment = async (payment: Payment) => {
   try {
-    await apiService.updatePayment(payment.id, payment);
+    await updateDoc(doc(db, 'jpc_payments', payment.id), { ...payment });
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, `payments/${payment.id}`);
+    handleFirestoreError(error, OperationType.UPDATE, `jpc_payments/${payment.id}`);
   }
 };
 
 // Promises
-export const addPromise = async (promise: any) => {
+export const addPromise = async (promise: Omit<PromiseType, 'id' | 'created_at'>) => {
+  const id = generateId();
+  const data = { ...promise, id, created_at: new Date().toISOString() };
   try {
-    await apiService.request('/promises', {
-      method: 'POST',
-      body: JSON.stringify(promise),
-    });
+    await setDoc(doc(db, 'jpc_promises', id), data);
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, 'promises');
+    handleFirestoreError(error, OperationType.WRITE, `jpc_promises/${id}`);
   }
 };
 
-export const updatePromise = async (id: string, updates: any) => {
+export const updatePromise = async (promise: PromiseType) => {
   try {
-    await apiService.request(`/promises/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(updates),
-    });
+    await updateDoc(doc(db, 'jpc_promises', promise.id), { ...promise });
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, `promises/${id}`);
+    handleFirestoreError(error, OperationType.UPDATE, `jpc_promises/${promise.id}`);
   }
 };
 
-// QC Checklist (Handled by backend in REST API usually, or via candidate update)
-export const updateQCChecklistItem = async (item: any) => {
-  // Implementation depends on API structure, usually flags
+// QC Checklist
+export const updateQCChecklistItem = async (item: QCChecklistItem) => {
+  try {
+    await updateDoc(doc(db, 'jpc_qc_checklist', item.id), { ...item });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `jpc_qc_checklist/${item.id}`);
+  }
 };
 
-export const seedQCChecklist = async (candidateId: string) => {};
-export const resetQCChecklist = async (candidateId: string) => {};
-export const migrateAllChecklists = async () => {};
+export const seedQCChecklist = async (candidateId: string) => {
+  const items = [
+    { label: 'Candidate indidity Verification', hasTextBox: false },
+    { label: 'Educational Verification', hasTextBox: false },
+    { label: 'Visa Verification', hasTextBox: false },
+    { label: 'Exprince Verification', hasTextBox: false },
+    { label: 'Location Verification', hasTextBox: true },
+    { label: 'Experirnce Verification', hasTextBox: false },
+    { label: 'Domain Suggection By Candidatte', hasTextBox: true },
+    { label: 'EAD Verification', hasTextBox: false }
+  ];
+  
+  for (const item of items) {
+    const id = generateId();
+    const data = {
+      id,
+      candidate_id: candidateId,
+      item_key: item.label.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, '_'),
+      item_label: item.label,
+      checked: false,
+      value: '',
+      has_text_box: item.hasTextBox,
+      created_at: new Date().toISOString()
+    };
+    try {
+      await setDoc(doc(db, 'jpc_qc_checklist', id), data);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `jpc_qc_checklist/${id}`);
+    }
+  }
+};
+
+export const resetQCChecklist = async (candidateId: string) => {
+  try {
+    const q = query(collection(db, 'jpc_qc_checklist'), where('candidate_id', '==', candidateId));
+    const snap = await getDocs(q);
+    for (const d of snap.docs) {
+      await deleteDoc(doc(db, 'jpc_qc_checklist', d.id));
+    }
+    await seedQCChecklist(candidateId);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, `jpc_qc_checklist reset for ${candidateId}`);
+  }
+};
+
+export const migrateAllChecklists = async () => {
+  try {
+    const candidatesSnap = await getDocs(collection(db, 'jpc_candidates'));
+    for (const candidateDoc of candidatesSnap.docs) {
+      const candidateId = candidateDoc.id;
+      const q = query(collection(db, 'jpc_qc_checklist'), where('candidate_id', '==', candidateId));
+      const checklistSnap = await getDocs(q);
+      
+      const checklist = checklistSnap.docs.map(d => d.data() as QCChecklistItem);
+      const isOld = checklist.length > 0 && (checklist.length !== 8 || !checklist.some(item => item.item_label === 'Candidate indidity Verification'));
+      
+      if (isOld) {
+        console.log(`Migrating checklist for candidate ${candidateId}...`);
+        for (const d of checklistSnap.docs) {
+          await deleteDoc(doc(db, 'jpc_qc_checklist', d.id));
+        }
+        await seedQCChecklist(candidateId);
+      }
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, 'jpc_candidates during migration');
+  }
+};
 
 // Notifications
-export const addNotification = async (notification: any) => {
-  // Backend usually handles notifications in WP JSON API context
+export const addNotification = async (notification: Omit<AppNotification, 'id' | 'created_at' | 'read'>) => {
+  const id = generateId();
+  const data = { 
+    ...notification, 
+    id, 
+    read: false, 
+    created_at: new Date().toISOString() 
+  };
+  try {
+    await setDoc(doc(db, 'jpc_notifications', id), data);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `jpc_notifications/${id}`);
+  }
 };
 
 export const markNotificationAsRead = async (id: string) => {
-  // Implement if exists in API
+  try {
+    await updateDoc(doc(db, 'jpc_notifications', id), { read: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, `jpc_notifications/${id}`);
+  }
 };
 
 // Follow-ups
 export const addFollowUp = async (followUp: Omit<FollowUp, 'id' | 'created_at'>) => {
+  const id = generateId();
+  const data = { ...followUp, id, created_at: new Date().toISOString() };
   try {
-    await apiService.createFollowup(followUp);
+    await setDoc(doc(db, 'jpc_followups', id), data);
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, 'followups');
+    handleFirestoreError(error, OperationType.WRITE, `jpc_followups/${id}`);
   }
 };
 
 export const updateFollowUp = async (followUp: FollowUp) => {
   try {
-    await apiService.updateFollowup(followUp.id, followUp);
+    await updateDoc(doc(db, 'jpc_followups', followUp.id), { ...followUp });
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, `followups/${followUp.id}`);
+    handleFirestoreError(error, OperationType.UPDATE, `jpc_followups/${followUp.id}`);
   }
 };
 
 // Activity Logs
 export const logActivity = async (candidateId: string, action: string, details: string, userId: string | number | null) => {
-  // Many REST APIs handle this automatically or via a log endpoint
+  const id = generateId();
+  const data = {
+    id,
+    candidate_id: candidateId,
+    action,
+    details,
+    user_id: userId,
+    created_at: new Date().toISOString()
+  };
+  try {
+    await setDoc(doc(db, 'jpc_activity_logs', id), data);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `jpc_activity_logs/${id}`);
+  }
 };
 
 // Interview Support
 export const addInterviewRequest = async (request: Omit<InterviewRequest, 'id' | 'created_at' | 'updated_at'>) => {
+  const id = generateId();
+  const data = { 
+    ...request, 
+    id, 
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
+
+  // Remove undefined fields to prevent Firestore errors
+  Object.keys(data).forEach(key => {
+    if ((data as any)[key] === undefined) {
+      delete (data as any)[key];
+    }
+  });
+
   try {
-    const data = await apiService.createInterview(request);
-    return data.id;
+    await setDoc(doc(db, 'jpc_interviews', id), data);
+    return id;
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, 'interviews');
+    handleFirestoreError(error, OperationType.WRITE, `jpc_interviews/${id}`);
   }
 };
 
 export const updateInterviewRequest = async (id: string, updates: Partial<InterviewRequest>) => {
   try {
-    await apiService.updateInterview(id, updates);
+    const data = { ...updates, updated_at: new Date().toISOString() };
+    await updateDoc(doc(db, 'jpc_interviews', id), data);
   } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, `interviews/${id}`);
+    handleFirestoreError(error, OperationType.UPDATE, `jpc_interviews/${id}`);
   }
 };
 
-export const generateId = () => `temp_${Math.random().toString(36).slice(2, 11)}`;
+// Utils
+export const generateId = () => Math.random().toString(36).slice(2, 11);
 export const now = () => new Date().toISOString();

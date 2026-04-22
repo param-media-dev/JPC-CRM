@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { subscribeToCollection, generateId, logActivity } from '../services/storage';
 import { Application, Candidate, User, Notification } from '../types';
@@ -18,10 +18,11 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
+import { db } from '../firebase';
+import { collection, doc, setDoc, query, where, getDocs } from 'firebase/firestore';
 import { useToast } from '../contexts/ToastContext';
 import { CandidateSheet } from '../components/CandidateSheet';
 import { TrackJobSheet } from '../components/TrackJobSheet';
-import { apiService } from '../services/apiService';
 
 export const AppTracker: React.FC = () => {
   const { user, isAuthReady } = useAuth();
@@ -40,29 +41,31 @@ export const AppTracker: React.FC = () => {
   const [inlineJobLink, setInlineJobLink] = useState('');
   const [isInlineSubmitting, setIsInlineSubmitting] = useState(false);
 
-  const fetchData = useCallback(async () => {
-    if (!isAuthReady) return;
-    setIsLoading(true);
-    try {
-      const [appsData, candsData, teamData] = await Promise.all([
-        apiService.getApplications(),
-        apiService.getCandidates(),
-        apiService.getUsers()
-      ]);
-      setApplications(Array.isArray(appsData) ? appsData.sort((a: any, b: any) => new Date(b.applied_at).getTime() - new Date(a.applied_at).getTime()) : []);
-      setCandidates(Array.isArray(candsData) ? candsData : []);
-      setTeam(Array.isArray(teamData) ? teamData : []);
-      setReportLogs([]); // Mock or implement if exists
-    } catch (error) {
-      console.error('Failed to fetch data:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [isAuthReady]);
-
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (!isAuthReady) return;
+
+    const unsubApps = subscribeToCollection<Application>('jpc_applications', (data) => {
+      setApplications(data.sort((a, b) => new Date(b.applied_at).getTime() - new Date(a.applied_at).getTime()));
+      setIsLoading(false);
+    });
+
+    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
+      setCandidates(data);
+    });
+
+    const unsubTeam = subscribeToCollection<User>('jpc_users', (data) => {
+      setTeam(data);
+    });
+
+    const unsubLogs = subscribeToCollection<any>('jpc_report_logs', setReportLogs);
+
+    return () => {
+      unsubApps();
+      unsubCandidates();
+      unsubTeam();
+      unsubLogs();
+    };
+  }, [isAuthReady]);
 
   const filteredApps = useMemo(() => {
     return applications.filter(app => {
@@ -121,12 +124,71 @@ export const AppTracker: React.FC = () => {
     if (!user || user.role !== 'jpc_recruiter' || stats.candidateProgress.length === 0) return;
 
     const checkAndNotify = async () => {
-      // Automatic notifications are currently disabled as the backend does not support the /notifications endpoint
-      /*
       const today = new Date().toISOString().split('T')[0];
-      ...
-      */
-      console.log('Automatic target checks are scheduled but notifications are disabled due to missing API support.');
+      const currentHour = new Date().getHours();
+      
+      // Automatically trigger after 5 PM (17:00)
+      if (currentHour < 17) return;
+
+      for (const p of stats.candidateProgress) {
+        if (p.count < p.target) {
+          // Check if already reported today for this candidate
+          const alreadyReported = reportLogs.some(log => 
+            log.recruiter_id === String(user.id) && 
+            log.candidate_id === p.id && 
+            log.date === today
+          );
+
+          if (!alreadyReported) {
+            const recruiter = team.find(u => String(u.id) === String(user.id));
+            const tl = team.find(u => String(u.id) === String(recruiter?.leader_id));
+            const manager = team.find(u => u.role === 'jpc_manager' || u.role === 'administrator' || u.role === 'jpc_sysadmin');
+
+            if (tl) {
+              const id = generateId();
+              const message = `Automatic Alert: Recruiter ${user.display_name} has not completed the target for candidate ${p.name}. Progress: ${p.count}/${p.target} applications (${p.profiles} profile(s)).`;
+              
+              const notification: Notification = {
+                id,
+                recipient_id: String(tl.id),
+                sender_id: String(user.id),
+                type: 'target_not_met',
+                message,
+                read: false,
+                created_at: new Date().toISOString()
+              };
+
+              try {
+                await setDoc(doc(db, 'jpc_notifications', id), notification);
+                
+                if (manager) {
+                  const ccId = generateId();
+                  await setDoc(doc(db, 'jpc_notifications', ccId), {
+                    ...notification,
+                    id: ccId,
+                    recipient_id: String(manager.id),
+                    message: `[CC] ${message}`
+                  });
+                }
+
+                // Log the report to prevent duplicates
+                const logId = generateId();
+                await setDoc(doc(db, 'jpc_report_logs', logId), {
+                  id: logId,
+                  recruiter_id: String(user.id),
+                  candidate_id: p.id,
+                  date: today,
+                  sent_at: new Date().toISOString()
+                });
+
+                console.log(`[AUTO-EMAIL SIMULATION] To: ${tl.display_name}, Message: ${message}`);
+              } catch (error) {
+                console.error('Auto-notification error:', error);
+              }
+            }
+          }
+        }
+      }
     };
 
     checkAndNotify();
@@ -173,7 +235,7 @@ export const AppTracker: React.FC = () => {
     };
 
     try {
-      await apiService.request('/applications', { method: 'POST', body: JSON.stringify(newApp) });
+      await setDoc(doc(db, 'jpc_applications', id), newApp);
       await logActivity(candidate.id, 'Job Applied (Inline)', `Applied via Link: ${inlineJobLink}`, user?.id || null);
       showToast('Entry added to sheet', 'success');
       setInlineJobLink('');

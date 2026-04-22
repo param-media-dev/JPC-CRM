@@ -5,7 +5,6 @@ import { getUsers, generateId, saveCandidate, seedQCChecklist, logActivity, addN
 import { uploadFile } from '../services/fileService';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { useData } from '../contexts/DataContext';
 import { Candidate, User } from '../types';
 import { cn } from '../lib/utils';
 import { parseResume } from '../services/aiService';
@@ -20,7 +19,6 @@ interface AddCandidateModalProps {
 
 export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, onClose, onSuccess }) => {
   const { user } = useAuth();
-  const { refreshData } = useData();
   const { showToast } = useToast();
   const [salesUsers, setSalesUsers] = useState<User[]>([]);
   const [isParsing, setIsParsing] = useState(false);
@@ -48,19 +46,7 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
   useEffect(() => {
     if (isOpen) {
       getUsers().then(users => {
-        // API response might be { data: User[], ... } or just User[]
-        const userList = Array.isArray(users) ? users : (users as any)?.data;
-
-        if (Array.isArray(userList)) {
-          // Include ONLY active Sales users as requested
-          setSalesUsers(userList.filter(u => 
-            u.role === 'jpc_sales' && 
-            (u.is_active === undefined || u.is_active === true || u.is_active === 1 || u.is_active === '1')
-          ));
-        } else {
-          console.warn('getUsers() did not return a valid array or data property:', users);
-          setSalesUsers([]);
-        }
+        setSalesUsers(users.filter(u => u.role === 'jpc_sales'));
       });
     }
   }, [isOpen]);
@@ -242,70 +228,62 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
       updated_at: new Date().toISOString()
     };
 
-    try {
-      const savedCandidate = await saveCandidate(newCandidate, user?.id || null);
-      const finalId = savedCandidate?.id || id;
-      
-      await refreshData();
-      seedQCChecklist(finalId);
-      logActivity(finalId, 'Candidate created', `Candidate ${formData.full_name} added to the system.`, user?.id || null);
-      
-      if (formData.assigned_sales) {
-        addNotification({
-          recipient_id: formData.assigned_sales,
-          sender_id: user?.id || null,
-          type: 'system_alert',
-          message: `You have been assigned to a new candidate: ${formData.full_name}`
-        });
-      }
-
-      if (formData.schedule_call_date && formData.schedule_call_time) {
-        const timezoneStr = formData.schedule_call_timezone || 'EST (Eastern Time)';
-        const t12 = new Date(`1970-01-01T${formData.schedule_call_time}:00`).toLocaleTimeString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true });
-        addFollowUp({
-          candidate_id: finalId,
-          stage: 'lead_generation',
-          followup_date: formData.schedule_call_date,
-          note: `Initial Call Scheduled at ${t12} ${timezoneStr}`,
-          done: false,
-          created_by: user?.id || null,
-        });
-        logActivity(finalId, 'Follow-up scheduled', `Scheduled initial call for ${formData.schedule_call_date} at ${t12} ${timezoneStr}`, user?.id || null);
-      }
-
-      showToast('Candidate added successfully', 'success');
-      onSuccess();
-      onClose();
-      setFormData({
-        full_name: '',
-        phone: '',
-        whatsapp: '',
-        email: '',
-        job_interest: '',
-        domain_interested: '',
-        location: '',
-        education: '',
-        lead_source: 'Facebook',
-        assigned_sales: '',
-        notes: '',
-        schedule_call_date: '',
-        schedule_call_time: '',
-        schedule_call_timezone: 'EST (Eastern Time)'
+    saveCandidate(newCandidate, user?.id || null);
+    seedQCChecklist(id);
+    logActivity(id, 'Candidate created', `Candidate ${formData.full_name} added to the system.`, user?.id || null);
+    
+    if (formData.assigned_sales) {
+      addNotification({
+        recipient_id: formData.assigned_sales,
+        sender_id: user?.id || null,
+        type: 'system_alert',
+        message: `You have been assigned to a new candidate: ${formData.full_name}`
       });
-      setResumeData({ base64: null, url: null, filename: null });
-      setExtraData({
-        degree: '',
-        university: '',
-        graduation_year: '',
-        experience_years: '',
-        current_designation: '',
-        skills: '',
-        linkedin_url: ''
-      });
-    } catch (error: any) {
-      console.error('Failed to save candidate:', error);
-      showToast(error.message || 'Failed to save candidate', 'error');
     }
+
+    if (formData.schedule_call_date && formData.schedule_call_time) {
+      const timezoneStr = formData.schedule_call_timezone || 'EST (Eastern Time)';
+      const t12 = new Date(`1970-01-01T${formData.schedule_call_time}:00`).toLocaleTimeString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true });
+      addFollowUp({
+        candidate_id: id,
+        stage: 'lead_generation',
+        followup_date: formData.schedule_call_date,
+        note: `Initial Call Scheduled at ${t12} ${timezoneStr}`,
+        done: false,
+        created_by: user?.id || null,
+      });
+      logActivity(id, 'Follow-up scheduled', `Scheduled initial call for ${formData.schedule_call_date} at ${t12} ${timezoneStr}`, user?.id || null);
+    }
+
+    showToast('Candidate added successfully', 'success');
+    onSuccess();
+    onClose();
+    setFormData({
+      full_name: '',
+      phone: '',
+      whatsapp: '',
+      email: '',
+      job_interest: '',
+      domain_interested: '',
+      location: '',
+      education: '',
+      lead_source: 'Facebook',
+      assigned_sales: '',
+      notes: '',
+      schedule_call_date: '',
+      schedule_call_time: '',
+      schedule_call_timezone: 'EST (Eastern Time)'
+    });
+    setResumeData({ base64: null, url: null, filename: null });
+    setExtraData({
+      degree: '',
+      university: '',
+      graduation_year: '',
+      experience_years: '',
+      current_designation: '',
+      skills: '',
+      linkedin_url: ''
+    });
   };
 
   return (

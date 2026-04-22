@@ -1,9 +1,11 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Bell, X, Check } from 'lucide-react';
+import { collection, query, where } from 'firebase/firestore';
+import { db } from '../firebase';
+import { subscribeToQuery, markNotificationAsRead, addNotification } from '../services/storage';
+import { Notification as AppNotification } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { cn } from '../lib/utils';
-import { apiService } from '../services/apiService';
-import { Notification as AppNotification } from '../types';
 
 export const NotificationList: React.FC = () => {
   const { user } = useAuth();
@@ -18,34 +20,44 @@ export const NotificationList: React.FC = () => {
       if ('Notification' in window && Notification.permission === 'default') {
         Notification.requestPermission().catch(e => console.warn('Notification permission request failed:', e));
       }
-    } catch (e) {}
+    } catch (error) {
+      console.warn('Push notifications are not supported in this context:', error);
+    }
   }, []);
 
   useEffect(() => {
     if (!user) return;
-
-    const fetchNotifications = async () => {
-      // API currently does not have a /notifications endpoint
-      // Disabling call to prevent 404 errors
-      /*
+    const q = query(collection(db, 'jpc_notifications'), where('recipient_id', '==', String(user.id)), where('read', '==', false));
+    return subscribeToQuery<AppNotification>(q, (data) => {
+      // Check for new notifications to trigger push
       try {
-        const data = await apiService.getCollection('notifications', { recipient_id: String(user.id), read: '0' });
-        // ... rest of logic
+        if (!isInitialLoad.current && 'Notification' in window && Notification.permission === 'granted') {
+          const prevIds = new Set(prevNotificationsRef.current.map(n => n.id));
+          const newNotifications = data.filter(n => !prevIds.has(n.id));
+          
+          newNotifications.forEach(n => {
+            // Don't show push for notifications created more than 1 minute ago
+            const isRecent = (new Date().getTime() - new Date(n.created_at).getTime()) < 60000;
+            if (isRecent) {
+              new Notification('New Placify Alert', {
+                body: n.message,
+                icon: '/favicon.ico' // fallback icon
+              });
+            }
+          });
+        }
       } catch (error) {
-        console.error('Failed to fetch notifications:', error);
+        console.warn('Push notifications are not supported in this context:', error);
       }
-      */
-      setNotifications([]);
-    };
-
-    fetchNotifications();
-    const interval = setInterval(fetchNotifications, 30000); // Poll every 30 seconds
-    return () => clearInterval(interval);
+      
+      isInitialLoad.current = false;
+      prevNotificationsRef.current = data;
+      setNotifications(data);
+    }, 'jpc_notifications');
   }, [user]);
 
   const handleMarkAsRead = async (id: string) => {
-    // API endpoint doesn't exist yet
-    setNotifications(prev => prev.filter(n => n.id !== id));
+    await markNotificationAsRead(id);
   };
 
   return (
@@ -72,18 +84,14 @@ export const NotificationList: React.FC = () => {
                   } catch (error) {
                     console.warn('Push notifications are not supported in this context:', error);
                   }
-                  
-                  // Mock notification since endpoint is missing
-                  const mockId = Math.random().toString(36).substring(7);
-                  setNotifications(prev => [{
-                    id: mockId,
-                    recipient_id: String(user?.id),
-                    sender_id: 'system',
-                    type: 'system_alert',
-                    message: `Test notification at ${new Date().toLocaleTimeString()}`,
-                    read: false,
-                    created_at: new Date().toISOString()
-                  }, ...prev]);
+                  if (user) {
+                    await addNotification({
+                      recipient_id: String(user.id),
+                      sender_id: String(user.id),
+                      type: 'system_alert',
+                      message: `Test notification at ${new Date().toLocaleTimeString()}`
+                    });
+                  }
                 }}
                 className="text-xs px-2 py-1 bg-accent-blue text-white rounded hover:bg-accent-blue/90 transition-colors"
               >

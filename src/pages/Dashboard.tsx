@@ -1,28 +1,24 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
-import { markNotificationAsRead } from '../services/storage';
+import { subscribeToCollection, subscribeToQuery, markNotificationAsRead } from '../services/storage';
 import { STAGES } from '../constants';
 import { Users, CheckCircle2, Clock, UserX, ArrowRight, LayoutGrid, Phone, Calendar, ArrowUpRight, AlertCircle, ChevronRight, FileEdit, Video, TrendingUp, Check } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { Candidate, FollowUp, Notification, ResumeChangeRequest, InterviewRequest, Application } from '../types';
 import { CandidateSheet } from '../components/CandidateSheet';
+import { db } from '../firebase';
+import { query, collection, where } from 'firebase/firestore';
 
 export const Dashboard: React.FC = () => {
-  const { user } = useAuth();
-  const navigate = useNavigate();
-  const { 
-    candidates, 
-    followUps, 
-    notifications, 
-    resumeRequests, 
-    interviews, 
-    applications, 
-    isLoading 
-  } = useData();
-  
+  const { user, isAuthReady } = useAuth();
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [followUps, setFollowUps] = useState<FollowUp[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [resumeRequests, setResumeRequests] = useState<ResumeChangeRequest[]>([]);
+  const [interviews, setInterviews] = useState<InterviewRequest[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState('');
@@ -59,6 +55,49 @@ export const Dashboard: React.FC = () => {
     const interval = setInterval(updateTime, 1000);
     return () => clearInterval(interval);
   }, [quotes]);
+
+  useEffect(() => {
+    if (!isAuthReady) return;
+
+    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
+      setCandidates(data);
+      setIsLoading(false);
+    });
+
+    const unsubFollowUps = subscribeToCollection<FollowUp>('jpc_followups', (data) => {
+      setFollowUps(data);
+    });
+
+    let unsubNotifications = () => {};
+    if (user) {
+      const q = query(
+        collection(db, 'jpc_notifications'),
+        where('recipient_id', '==', String(user.id))
+      );
+      unsubNotifications = subscribeToQuery<Notification>(q, setNotifications, 'jpc_notifications');
+    }
+
+    const unsubResumeRequests = subscribeToCollection<ResumeChangeRequest>('jpc_resume_requests', (data) => {
+      setResumeRequests(data);
+    });
+
+    const unsubInterviews = subscribeToCollection<InterviewRequest>('jpc_interviews', (data) => {
+      setInterviews(data);
+    });
+
+    const unsubApps = subscribeToCollection<Application>('jpc_applications', (data) => {
+      setApplications(data);
+    });
+
+    return () => {
+      unsubCandidates();
+      unsubFollowUps();
+      unsubNotifications();
+      unsubResumeRequests();
+      unsubInterviews();
+      unsubApps();
+    };
+  }, [isAuthReady, user]);
 
   const activeCandidates = useMemo(() => {
     let filtered = candidates.filter(c => c.current_stage !== 'not_interested' && c.current_stage !== 'completed');
@@ -353,9 +392,9 @@ export const Dashboard: React.FC = () => {
                 return true;
               }).length;
               return (
-                <Link
+                <motion.a
                   key={key}
-                  to={`/pipeline?stage=${key}`}
+                  href={`#pipeline?stage=${key}`}
                   initial={{ x: -20, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
                   transition={{ delay: i * 0.05 }}
@@ -371,7 +410,7 @@ export const Dashboard: React.FC = () => {
                     </div>
                   </div>
                   <ChevronRight className="w-5 h-5 text-text-muted group-hover:text-accent-blue transition-colors" />
-                </Link>
+                </motion.a>
               );
             })}
           </div>
@@ -418,9 +457,9 @@ export const Dashboard: React.FC = () => {
                   {activeInterviews.slice(0, 3).map(int => {
                     const candidate = candidates.find(c => c.id === int.candidate_id);
                     return (
-                      <Link 
+                      <a 
                         key={int.id} 
-                        to="/interviews"
+                        href="#interviews"
                         className="p-4 flex items-center gap-4 hover:bg-bg-tertiary transition-colors group"
                       >
                         <div className={cn(
@@ -438,14 +477,14 @@ export const Dashboard: React.FC = () => {
                           </div>
                         </div>
                         <ChevronRight className="w-4 h-4 text-text-muted" />
-                      </Link>
+                      </a>
                     );
                   })}
                 </div>
                 <div className="p-3 bg-bg-tertiary/50 border-t border-border-primary">
-                  <Link to="/interviews" className="text-[10px] font-bold text-accent-blue hover:underline flex items-center justify-center gap-1 uppercase tracking-wider">
+                  <a href="#interviews" className="text-[10px] font-bold text-accent-blue hover:underline flex items-center justify-center gap-1 uppercase tracking-wider">
                     View All Interviews <ArrowRight className="w-3 h-3" />
-                  </Link>
+                  </a>
                 </div>
               </div>
             </div>
@@ -465,9 +504,9 @@ export const Dashboard: React.FC = () => {
               <div className="bg-bg-secondary rounded-3xl border border-border-primary overflow-hidden shadow-sm">
                 <div className="divide-y divide-border-primary">
                   {pendingResumeRequests.slice(0, 3).map(req => (
-                    <Link 
+                    <a 
                       key={req.id} 
-                      to="/resume-log"
+                      href="#resume-log"
                       className="p-4 flex items-center gap-4 hover:bg-bg-tertiary transition-colors group"
                     >
                       <div className="w-10 h-10 rounded-xl bg-accent-blue/10 flex items-center justify-center text-accent-blue">
@@ -478,13 +517,13 @@ export const Dashboard: React.FC = () => {
                         <p className="text-xs text-text-muted truncate">{req.details}</p>
                       </div>
                       <ChevronRight className="w-4 h-4 text-text-muted" />
-                    </Link>
+                    </a>
                   ))}
                 </div>
                 <div className="p-3 bg-bg-tertiary/50 border-t border-border-primary">
-                  <Link to="/resume-log" className="text-[10px] font-bold text-accent-blue hover:underline flex items-center justify-center gap-1 uppercase tracking-wider">
+                  <a href="#resume-log" className="text-[10px] font-bold text-accent-blue hover:underline flex items-center justify-center gap-1 uppercase tracking-wider">
                     View All Requests <ArrowRight className="w-3 h-3" />
-                  </Link>
+                  </a>
                 </div>
               </div>
             </div>
@@ -525,9 +564,9 @@ export const Dashboard: React.FC = () => {
               )}
             </div>
             <div className="p-4 bg-bg-tertiary/50 border-t border-border-primary">
-              <Link to="/candidates" className="text-xs font-bold text-accent-blue hover:underline flex items-center justify-center gap-2">
+              <a href="#candidates" className="text-xs font-bold text-accent-blue hover:underline flex items-center justify-center gap-2">
                 View All Candidates <ArrowRight className="w-3 h-3" />
-              </Link>
+              </a>
             </div>
           </div>
         </div>

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { subscribeToCollection, generateId, addInterviewRequest, updateInterviewRequest, logActivity, addNotification } from '../services/storage';
 import { InterviewRequest, Candidate, User } from '../types';
@@ -21,7 +21,8 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { useToast } from '../contexts/ToastContext';
-import { apiService } from '../services/apiService';
+import { db } from '../firebase';
+import { collection, addDoc } from 'firebase/firestore';
 
 export const InterviewSupport: React.FC = () => {
   const { user, isAuthReady } = useAuth();
@@ -58,28 +59,23 @@ export const InterviewSupport: React.FC = () => {
     }
   }, [actionConfig, user]);
 
-  const fetchData = useCallback(async () => {
-    if (!isAuthReady) return;
-    setIsLoading(true);
-    try {
-      const [interviewsData, candidatesData, teamData] = await Promise.all([
-        apiService.getInterviews(),
-        apiService.getCandidates(),
-        apiService.getUsers()
-      ]);
-      setInterviews((Array.isArray(interviewsData) ? interviewsData : []).sort((a: any, b: any) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()));
-      setCandidates(Array.isArray(candidatesData) ? candidatesData : []);
-      setTeam(Array.isArray(teamData) ? teamData : []);
-    } catch (error) {
-      console.error('Failed to fetch data:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [isAuthReady]);
-
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (!isAuthReady) return;
+
+    const unsubInterviews = subscribeToCollection<InterviewRequest>('jpc_interviews', (data) => {
+      setInterviews(data.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()));
+      setIsLoading(false);
+    });
+
+    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', setCandidates);
+    const unsubTeam = subscribeToCollection<User>('jpc_users', setTeam);
+
+    return () => {
+      unsubInterviews();
+      unsubCandidates();
+      unsubTeam();
+    };
+  }, [isAuthReady]);
 
   const filteredInterviews = useMemo(() => {
     return interviews.filter(interview => {
@@ -97,7 +93,12 @@ export const InterviewSupport: React.FC = () => {
     if (!user) return;
     try {
       setIsSyncing(true);
-      await apiService.updateUser(user.id, { calendly_token: calendlyToken });
+      // Update user document in jpc_users collection
+      const { setDoc, doc } = await import('firebase/firestore');
+      await setDoc(doc(db, 'jpc_users', String(user.id)), { 
+        ...user, 
+        calendly_token: calendlyToken 
+      }, { merge: true });
       showToast('Calendly Token saved!', 'success');
     } catch (error) {
       showToast('Failed to save token', 'error');

@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
-import { saveCandidate, logActivity } from '../services/storage';
+import { subscribeToCollection, saveCandidate, logActivity } from '../services/storage';
 import { STAGES } from '../constants';
 import { Search, Filter, X, Package, Phone, Mail, MapPin, Calendar, Users, ArrowRight, MoreVertical, Edit2, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -10,11 +8,19 @@ import { cn } from '../lib/utils';
 import { Candidate, Stage } from '../types';
 
 export const Pipeline: React.FC = () => {
-  const { user } = useAuth();
-  const navigate = useNavigate();
-  const { candidates: allCandidates, isLoading } = useData();
-  const candidates = useMemo(() => allCandidates.filter(c => c.current_stage !== 'not_interested'), [allCandidates]);
+  const { user, isAuthReady } = useAuth();
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    if (!isAuthReady) return;
+    const unsub = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
+      setCandidates(data.filter(c => c.current_stage !== 'not_interested'));
+      setIsLoading(false);
+    });
+    return () => unsub();
+  }, [isAuthReady]);
 
   const filteredCandidates = useMemo(() => {
     return candidates.filter(c => {
@@ -93,7 +99,7 @@ export const Pipeline: React.FC = () => {
                         animate={{ scale: 1, opacity: 1 }}
                         exit={{ scale: 0.9, opacity: 0 }}
                         className="bg-bg-secondary p-4 rounded-2xl border border-border-primary shadow-sm hover:shadow-md hover:border-accent-blue transition-all group cursor-pointer relative"
-                        onClick={() => navigate(`/candidate/${candidate.id}`)}
+                        onClick={() => window.location.hash = `#candidate?id=${candidate.id}`}
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div className="truncate pr-6">

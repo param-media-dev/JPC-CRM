@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { apiService } from '../services/apiService';
+import { db } from '../firebase';
+import { doc, onSnapshot, collection, query, where } from 'firebase/firestore';
 import { Candidate, Payment, Application, InterviewRequest, ActivityLog } from '../types';
 import { STAGES } from '../constants';
 import { 
@@ -41,37 +42,42 @@ export const CandidateDashboard: React.FC = () => {
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchDashboardData = useCallback(async () => {
-    if (!user?.candidate_id) return;
-    const id = user.candidate_id;
-    setIsLoading(true);
-    try {
-      const [candData, paymentsData, appsData, interviewsData] = await Promise.all([
-        apiService.getCandidate(id),
-        apiService.getPayments({ candidate_id: id }),
-        apiService.getApplications({ candidate_id: id }),
-        apiService.getInterviews({ candidate_id: id })
-      ]);
-
-      if (candData) {
-        setCandidate(candData);
-        setPayments(Array.isArray(paymentsData) ? paymentsData : []);
-        setApplications(Array.isArray(appsData) ? appsData : []);
-        setInterviews(Array.isArray(interviewsData) ? interviewsData : []);
-        // Activity logs might need a specific fetch if needed
-        setActivityLogs([]); 
-      }
-    } catch (error) {
-      console.error('Failed to fetch dashboard data:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [user]);
-
   useEffect(() => {
     if (!isAuthReady || !user?.candidate_id) return;
-    fetchDashboardData();
-  }, [isAuthReady, user, fetchDashboardData]);
+
+    const id = user.candidate_id;
+
+    const unsubCandidate = onSnapshot(doc(db, 'jpc_candidates', id), (doc) => {
+      if (doc.exists()) {
+        setCandidate(doc.data() as Candidate);
+        setIsLoading(false);
+      }
+    });
+
+    const unsubPayments = onSnapshot(query(collection(db, 'jpc_payments'), where('candidate_id', '==', id)), (snap) => {
+      setPayments(snap.docs.map(d => d.data() as Payment));
+    });
+
+    const unsubApps = onSnapshot(query(collection(db, 'jpc_applications'), where('candidate_id', '==', id)), (snap) => {
+      setApplications(snap.docs.map(d => d.data() as Application));
+    });
+
+    const unsubInterviews = onSnapshot(query(collection(db, 'jpc_interviews'), where('candidate_id', '==', id)), (snap) => {
+      setInterviews(snap.docs.map(d => d.data() as InterviewRequest));
+    });
+
+    const unsubActivity = onSnapshot(query(collection(db, 'jpc_activity_logs'), where('candidate_id', '==', id)), (snap) => {
+      setActivityLogs(snap.docs.map(d => d.data() as ActivityLog).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+    });
+
+    return () => {
+      unsubCandidate();
+      unsubPayments();
+      unsubApps();
+      unsubInterviews();
+      unsubActivity();
+    };
+  }, [isAuthReady, user]);
 
   const paymentData = useMemo(() => {
     const total = candidate?.package_amount || 0;

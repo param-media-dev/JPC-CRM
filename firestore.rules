@@ -1,0 +1,156 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ===============================================================
+    // Global Helpers
+    // ===============================================================
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function getUserData(uid) {
+      return get(/databases/$(database)/documents/jpc_users/$(uid)).data;
+    }
+
+    function hasUserDoc(uid) {
+      return exists(/databases/$(database)/documents/jpc_users/$(uid));
+    }
+
+    function isAdmin() {
+      return isEmailVerified() && (
+        request.auth.token.email == "paramatwork3076@gmail.com" ||
+        (hasUserDoc(request.auth.uid) && getUserData(request.auth.uid).role in ['administrator', 'jpc_sysadmin'])
+      );
+    }
+
+    function isManager() {
+      return isEmailVerified() && hasUserDoc(request.auth.uid) && getUserData(request.auth.uid).role == 'jpc_manager';
+    }
+
+    function isRecruiter() {
+      return isEmailVerified() && hasUserDoc(request.auth.uid) && getUserData(request.auth.uid).role == 'jpc_recruiter';
+    }
+
+    // ===============================================================
+    // Entity Validations
+    // ===============================================================
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'username', 'display_name', 'role', 'created_at']) &&
+             data.id is string && data.id.size() <= 128 &&
+             data.username is string && data.username.size() <= 100 &&
+             data.display_name is string && data.display_name.size() <= 100 &&
+             data.role is string && data.role.size() <= 50;
+    }
+
+    function isValidCandidate(data) {
+      return data.keys().hasAll(['id', 'full_name']) &&
+             data.id is string && data.id.size() <= 128 &&
+             data.full_name is string && data.full_name.size() <= 200;
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // jpc_users
+    match /jpc_users/{userId} {
+      // Users can read any user profile if they are signed in (for mention/assign logic)
+      // and admins can read everything.
+      allow read: if isSignedIn();
+      
+      // Admin can create any user. 
+      // A user can create their own profile IF they are the bootstrap admin (by email) 
+      // or if they are just joining (though usually managed by admin).
+      allow create: if isSignedIn() && (
+        isAdmin() || isOwner(userId)
+      ) && isValidUser(incoming());
+      
+      allow update: if isSignedIn() && (
+        isAdmin() || (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['display_name', 'username']))
+      ) && isValidUser(incoming());
+      
+      allow delete: if isAdmin();
+    }
+
+    // jpc_candidates
+    match /jpc_candidates/{candidateId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn() && (
+        isAdmin() || isManager() || isRecruiter() ||
+        resource.data.email == request.auth.token.email
+      );
+      
+      allow create: if isSignedIn() && (
+        isAdmin() || isManager() || isRecruiter()
+      ) && isValidCandidate(incoming());
+      
+      allow update: if isSignedIn() && (
+        isAdmin() || isManager() || isRecruiter() ||
+        (existing().email == request.auth.token.email && incoming().diff(existing()).affectedKeys().hasOnly(['full_name', 'phone']))
+      ) && isValidCandidate(incoming());
+      
+      allow delete: if isAdmin() || isManager();
+    }
+
+    // jpc_applications
+    match /jpc_applications/{appId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin() || isManager();
+    }
+
+    // jpc_notifications
+    match /jpc_notifications/{notifId} {
+      allow get: if isSignedIn() && (request.auth.uid == resource.data.recipient_id || isAdmin());
+      allow list: if isSignedIn() && (request.auth.uid == resource.data.recipient_id || isAdmin());
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (request.auth.uid == resource.data.recipient_id || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // Other collections
+    match /jpc_resume_requests/{requestId} { allow read, write: if isSignedIn(); }
+    match /jpc_report_logs/{logId} { allow read, write: if isSignedIn(); }
+    match /jpc_activity_logs/{logId} { allow read, write: if isSignedIn(); }
+    match /jpc_followups/{followId} { allow read, write: if isSignedIn(); }
+    match /jpc_payments/{paymentId} { allow read, write: if isSignedIn(); }
+    match /jpc_promises/{promiseId} { allow read, write: if isSignedIn(); }
+    match /jpc_qc_checklist/{itemId} { allow read, write: if isSignedIn(); }
+    match /jpc_interviews/{interviewId} { allow read, write: if isSignedIn(); }
+    
+    // Connectivity test
+    match /_connection_test_/{docId} {
+      allow read: if isSignedIn();
+    }
+    match /test/connection {
+      allow read: if isSignedIn();
+    }
+  }
+}

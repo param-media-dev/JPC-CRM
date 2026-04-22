@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { NavLink } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { useData } from '../contexts/DataContext';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   LayoutDashboard, 
@@ -19,23 +17,43 @@ import {
   FileText,
   FileEdit,
   Video,
-  User as UserIcon,
-  Download
+  User as UserIcon
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { subscribeToCollection } from '../services/storage';
+import { FollowUp, Candidate } from '../types';
 
 interface SidebarProps {
+  currentHash: string;
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
-  const { user, logout } = useAuth();
+export const Sidebar: React.FC<SidebarProps> = ({ currentHash, isOpen, setIsOpen }) => {
+  const { user, logout, isAuthReady } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const { candidates: allCandidates, followUps: allFollowUps, exportData } = useData();
+
+  const [allFollowUps, setAllFollowUps] = useState<FollowUp[]>([]);
+  const [allCandidates, setAllCandidates] = useState<Candidate[]>([]);
+
+  useEffect(() => {
+    if (!isAuthReady) return;
+
+    const unsubFollowUps = subscribeToCollection<FollowUp>('jpc_followups', (data) => {
+      setAllFollowUps(data);
+    });
+
+    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
+      setAllCandidates(data);
+    });
+
+    return () => {
+      unsubFollowUps();
+      unsubCandidates();
+    };
+  }, [isAuthReady]);
 
   const followUpsCount = useMemo(() => {
-    if (!Array.isArray(allFollowUps)) return 0;
     const today = new Date().toISOString().split('T')[0];
     const personal = user?.role === 'administrator' || user?.role === 'jpc_manager' 
       ? allFollowUps 
@@ -48,50 +66,50 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
   }, [allCandidates]);
 
   const navItems = [
-    { label: 'Dashboard', path: '/dashboard', icon: LayoutDashboard, visible: true },
-    { label: 'My Profile', path: `/candidate/${user?.candidate_id}`, icon: UserIcon, visible: (user?.role === 'candidate' || user?.role === 'jpc_candidate') && !!user?.candidate_id },
+    { label: 'Dashboard', hash: '#dashboard', icon: LayoutDashboard, visible: true },
+    { label: 'My Profile', hash: `#candidate?id=${user?.candidate_id}`, icon: UserIcon, visible: (user?.role === 'candidate' || user?.role === 'jpc_candidate') && !!user?.candidate_id },
     { 
       label: 'Pipeline', 
-      path: '/pipeline', 
+      hash: '#pipeline', 
       icon: Trello, 
       visible: user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter' || user?.role === 'jpc_marketing' || user?.role === 'jpc_marketing_support' || user?.role === 'jpc_sales'
     },
-    { label: 'Candidates', path: '/candidates', icon: Users, visible: user?.role !== 'candidate' && user?.role !== 'jpc_candidate' },
+    { label: 'Candidates', hash: '#candidates', icon: Users, visible: user?.role !== 'candidate' && user?.role !== 'jpc_candidate' },
     { 
       label: 'Follow-Ups', 
-      path: '/followups', 
+      hash: '#followups', 
       icon: Clock, 
       visible: user?.role !== 'candidate' && user?.role !== 'jpc_candidate' && user?.role !== 'jpc_lead_gen' && user?.role !== 'jpc_resume' && user?.role !== 'jpc_proxy' && user?.role !== 'jpc_marketing' && user?.role !== 'jpc_marketing_support', 
       badge: followUpsCount 
     },
     { 
       label: 'App Tracker', 
-      path: '/applications', 
+      hash: '#applications', 
       icon: FileText, 
       visible: user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter'
     },
     { 
       label: 'Resume Log', 
-      path: '/resume-log', 
+      hash: '#resume-log', 
       icon: FileEdit, 
       visible: user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter' || user?.role === 'jpc_resume' || user?.role === 'jpc_marketing'
     },
     { 
       label: 'Interview Support', 
-      path: '/interviews', 
+      hash: '#interviews', 
       icon: Video, 
       visible: user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter' || user?.role === 'jpc_proxy'
     },
     { 
       label: 'Not Interested', 
-      path: '/not-interested', 
+      hash: '#not-interested', 
       icon: UserX, 
       visible: (user?.role === 'administrator' || user?.role === 'jpc_manager' || user?.role === 'jpc_sysadmin'),
       badge: notInterestedCount
     },
     { 
       label: 'Team', 
-      path: '/team', 
+      hash: '#team', 
       icon: Shield, 
       visible: (user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_marketing')
     },
@@ -140,41 +158,37 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
         {/* Navigation */}
         <nav className="flex-1 px-3 py-6 space-y-1.5 overflow-y-auto">
           {navItems.filter(item => item.visible).map(item => (
-            <NavLink
-              key={item.path}
-              to={item.path}
+            <a
+              key={item.hash}
+              href={item.hash}
               onClick={() => setIsOpen(false)}
-              className={({ isActive }) => cn(
+              className={cn(
                 "flex items-center gap-3 px-4 py-3 rounded-xl transition-all group relative font-semibold",
-                isActive 
+                currentHash.startsWith(item.hash) 
                   ? "bg-accent-blue/10 text-accent-blue shadow-inner" 
                   : "text-text-secondary hover:bg-bg-tertiary hover:text-text-primary"
               )}
             >
-              {({ isActive }) => (
-                <>
-                  {isActive && (
-                    <motion.div 
-                      layoutId="activeNavIndicator"
-                      className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-accent-blue rounded-r-full shadow-[0_0_8px_rgba(0,173,140,0.5)]" 
-                    />
-                  )}
-                  <item.icon className={cn(
-                    "w-5 h-5 transition-transform duration-300",
-                    isActive ? "scale-110" : "group-hover:scale-110 group-hover:text-text-primary"
-                  )} />
-                  <span className="flex-1">{item.label}</span>
-                  {item.badge !== undefined && item.badge > 0 && (
-                    <span className={cn(
-                      "px-2 py-0.5 rounded-full text-[10px] font-bold shadow-sm",
-                      item.path === '/not-interested' ? "bg-accent-red/20 text-accent-red" : "bg-accent-amber/20 text-accent-amber"
-                    )}>
-                      {item.badge}
-                    </span>
-                  )}
-                </>
+              {currentHash.startsWith(item.hash) && (
+                <motion.div 
+                  layoutId="activeNavIndicator"
+                  className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-6 bg-accent-blue rounded-r-full shadow-[0_0_8px_rgba(0,173,140,0.5)]" 
+                />
               )}
-            </NavLink>
+              <item.icon className={cn(
+                "w-5 h-5 transition-transform duration-300",
+                currentHash.startsWith(item.hash) ? "scale-110" : "group-hover:scale-110 group-hover:text-text-primary"
+              )} />
+              <span className="flex-1">{item.label}</span>
+              {item.badge !== undefined && item.badge > 0 && (
+                <span className={cn(
+                  "px-2 py-0.5 rounded-full text-[10px] font-bold shadow-sm",
+                  item.hash === '#not-interested' ? "bg-accent-red/20 text-accent-red" : "bg-accent-amber/20 text-accent-amber"
+                )}>
+                  {item.badge}
+                </span>
+              )}
+            </a>
           ))}
         </nav>
 
@@ -186,15 +200,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
           >
             {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
-          </button>
-
-          <button
-            onClick={exportData}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-accent-blue bg-accent-blue/10 hover:bg-accent-blue/20 transition-all font-bold text-xs shadow-sm ring-1 ring-accent-blue/20"
-            title="Download all cached data as JSON"
-          >
-            <Download className="w-4 h-4" />
-            <span>Backup Data (JSON)</span>
           </button>
 
           <div className="flex items-center gap-3 px-1 flex-wrap">

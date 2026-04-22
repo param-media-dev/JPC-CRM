@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
 import { subscribeToCollection, saveCandidate, logActivity } from '../services/storage';
 import { STAGES } from '../constants';
 import { UserX, Search, Filter, Trash2, RotateCcw, AlertCircle, Clock, Calendar, Phone, Mail, MapPin } from 'lucide-react';
@@ -10,21 +8,25 @@ import { cn } from '../lib/utils';
 import { Candidate, Stage } from '../types';
 
 export const NotInterested: React.FC = () => {
-  const { user } = useAuth();
-  const navigate = useNavigate();
-  const { candidates: allCandidates, isLoading } = useData();
+  const { user, isAuthReady } = useAuth();
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
 
-  const candidates = useMemo(() => {
-    if (!Array.isArray(allCandidates)) return [];
-    return allCandidates.filter(c => c.current_stage === 'not_interested');
-  }, [allCandidates]);
+  useEffect(() => {
+    if (!isAuthReady) return;
+    const unsub = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
+      setCandidates(data.filter(c => c.current_stage === 'not_interested'));
+      setIsLoading(false);
+    });
+    return () => unsub();
+  }, [isAuthReady]);
 
   const filteredCandidates = useMemo(() => {
     return candidates.filter(c => 
-      c.full_name?.toLowerCase().includes(search.toLowerCase()) ||
-      c.phone?.includes(search) ||
-      c.email?.toLowerCase().includes(search.toLowerCase())
+      c.full_name.toLowerCase().includes(search.toLowerCase()) ||
+      c.phone.includes(search) ||
+      c.email.toLowerCase().includes(search.toLowerCase())
     );
   }, [candidates, search]);
 
@@ -142,7 +144,7 @@ export const NotInterested: React.FC = () => {
                     </button>
                   )}
                   <button 
-                    onClick={() => navigate(`/candidate/${candidate.id}`)}
+                    onClick={() => window.location.hash = `#candidate?id=${candidate.id}`}
                     className="p-2 bg-bg-tertiary rounded-xl text-text-muted hover:text-accent-blue transition-all"
                   >
                     <AlertCircle className="w-4 h-4" />

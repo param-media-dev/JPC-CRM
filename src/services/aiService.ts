@@ -1,9 +1,8 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import * as pdfjsLib from 'pdfjs-dist';
-import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
 // Configure the worker for pdfjs
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
 export interface ParsedCandidate {
   full_name: string;
@@ -31,14 +30,7 @@ const extractTextFromPDF = async (base64: string): Promise<string> => {
     for (let i = 0; i < len; i++) {
       bytes[i] = binaryString.charCodeAt(i);
     }
-    
-    // Use disableRange and disableStream to prevent "readableStream" related errors in older/incompatible environments
-    const pdf = await pdfjsLib.getDocument({ 
-      data: bytes,
-      disableRange: true,
-      disableStream: true
-    }).promise;
-    
+    const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
     let text = '';
     // Only parse the first 5 pages to save time/tokens if it's super long
     const numPages = Math.min(pdf.numPages, 5); 
@@ -64,11 +56,7 @@ export async function parseResume(fileBase64: string, mimeType: string): Promise
       textToParse = await extractTextFromPDF(fileBase64);
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error('GEMINI_API_KEY is not configured. Please add it to your environment variables.');
-    }
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     
     // Switch to lite tier for fastest performance
     
@@ -89,7 +77,7 @@ export async function parseResume(fileBase64: string, mimeType: string): Promise
     parts.push({ text: "Return the data in JSON format following the provided schema. If a field is not found, return an empty string." });
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-3.1-flash-preview",
       contents: { parts },
       config: {
         responseMimeType: "application/json",

@@ -7,7 +7,10 @@ import { cn } from '../lib/utils';
 import { User, UserRole } from '../types';
 import { Modal } from '../components/Modal';
 import { useToast } from '../contexts/ToastContext';
-import { apiService } from '../services/apiService';
+import { deleteDoc, doc, setDoc, getDocs, collection, writeBatch, query, where } from 'firebase/firestore';
+import { db, firebaseConfig } from '../firebase';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signOut as secondarySignOut, updateProfile, createUserWithEmailAndPassword } from 'firebase/auth';
 
 const ROLES: { value: UserRole; label: string; icon: any; color: string }[] = [
   { value: 'administrator', label: 'Administrator', icon: ShieldCheck, color: 'text-accent-red' },
@@ -45,61 +48,24 @@ export const Team: React.FC = () => {
     candidate_id: '',
   });
 
-  const fetchData = async () => {
-    if (!isAuthReady) return;
-    setIsLoading(true);
-    try {
-      let allUsers: User[] = [];
-      let currentPage = 1;
-      let totalPages = 1;
-
-      // Fetch all pages
-      do {
-        const response = await apiService.request(`/users?page=${currentPage}`);
-        console.log(`Fetched team data (page ${currentPage}):`, response);
-        
-        let users: User[] = [];
-        if (Array.isArray(response)) {
-          users = response;
-          // If response is just an array, we can't detect pagination, assume 1 page
-          totalPages = 1;
-        } else if (response && typeof response === 'object' && Array.isArray((response as any).data)) {
-          users = (response as any).data;
-          totalPages = (response as any).total_pages || 1;
-        }
-        
-        allUsers = [...allUsers, ...users];
-        currentPage++;
-      } while (currentPage <= totalPages);
-      
-      setTeam(allUsers);
-    } catch (error) {
-      console.error('Failed to fetch team:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchData();
+    if (!isAuthReady) return;
+    const unsub = subscribeToCollection<User>('jpc_users', (data) => {
+      setTeam(data);
+      setIsLoading(false);
+    });
+    return () => unsub();
   }, [isAuthReady]);
 
   const visibleTeam = useMemo(() => {
     if (!user) return [];
-    console.log('Diagnostic: Team filtering active. User:', user.display_name, 'Role:', user.role, 'Total team size:', team.length);
-    
     if (user.role === 'administrator' || user.role === 'jpc_sysadmin' || user.role === 'jpc_manager') {
-      console.log('Diagnostic: User is admin/manager, returning full team.');
       return team;
     }
     if (user.role === 'jpc_marketing') {
-      const filtered = team.filter(u => String(u.leader_id) === String(user.id) || u.id === user.id);
-      console.log('Diagnostic: User is marketing, returning filtered team size:', filtered.length);
-      return filtered;
+      return team.filter(u => String(u.leader_id) === String(user.id) || u.id === user.id);
     }
-    const filtered = team.filter(u => u.id === user.id);
-    console.log('Diagnostic: User is restricted, returning team size:', filtered.length);
-    return filtered;
+    return team.filter(u => u.id === user.id);
   }, [team, user]);
 
   const canManage = (targetRole: UserRole) => {
@@ -120,6 +86,7 @@ export const Team: React.FC = () => {
     try {
       const email = formData.username.includes('@') ? formData.username : `${formData.username}@placify-crm.com`;
       
+      // Local validation for duplicate username in Firestore
       const isDuplicate = team.some(u => 
         u.username.toLowerCase() === formData.username.toLowerCase() && 
         (!editingUser || u.id !== editingUser.id)
@@ -131,33 +98,101 @@ export const Team: React.FC = () => {
         return;
       }
 
-      const userData: any = {
-        username: formData.username,
-        display_name: formData.display_name,
-        email: email,
-        role: formData.role,
-        leader_id: formData.role === 'jpc_recruiter' ? formData.leader_id : null,
-        calendly_link: formData.role === 'jpc_proxy' ? formData.calendly_link : null,
-        candidate_id: formData.role === 'jpc_candidate' ? formData.candidate_id : null,
-      };
+      let userId = editingUser?.id;
 
       if (!editingUser) {
-        userData.password = formData.password;
-        await apiService.createUser(userData);
-        setGeneratedPassword(formData.password);
-        showToast('Team member account created successfully!', 'success');
+        // Create Firebase Auth user using a secondary app instance
+        // This allows creating a user without logging out the current admin
+        const secondaryApp = initializeApp(firebaseConfig, 'SecondaryTeam');
+        const secondaryAuth = getAuth(secondaryApp);
+        
+        try {
+          const { user: fUser } = await createUserWithEmailAndPassword(
+            secondaryAuth, 
+            email, 
+            formData.password
+          );
+          await updateProfile(fUser, { displayName: formData.display_name });
+          
+          userId = fUser.uid;
+          
+          const newUser: User = {
+            id: userId,
+            username: formData.username,
+            display_name: formData.display_name,
+            email: email,
+            role: formData.role,
+            leader_id: formData.role === 'jpc_recruiter' ? formData.leader_id : null,
+            calendly_link: formData.role === 'jpc_proxy' ? formData.calendly_link : null,
+            candidate_id: formData.role === 'jpc_candidate' ? formData.candidate_id : null,
+            created_at: new Date().toISOString(),
+          };
+
+          await setDoc(doc(db, 'jpc_users', String(newUser.id)), newUser);
+          await secondarySignOut(secondaryAuth);
+          
+          setGeneratedPassword(formData.password);
+          showToast('Team member account created successfully!', 'success');
+        } catch (authError: any) {
+          console.error('Auth creation error:', authError);
+          let message = 'Failed to create team member account';
+          
+          if (authError.code === 'auth/email-already-in-use') {
+            // Try to find if this user already exists in Firestore
+            const usersSnap = await getDocs(query(collection(db, 'jpc_users'), where('email', '==', email)));
+            
+            if (!usersSnap.empty) {
+              const existingUser = usersSnap.docs[0].data() as User;
+              
+              // Update their role and details
+              const updatedUser: User = {
+                ...existingUser,
+                username: formData.username,
+                display_name: formData.display_name,
+                role: formData.role,
+                leader_id: formData.role === 'jpc_recruiter' ? formData.leader_id : null,
+                calendly_link: formData.role === 'jpc_proxy' ? formData.calendly_link : null,
+                candidate_id: formData.role === 'jpc_candidate' ? formData.candidate_id : null,
+              };
+
+              await setDoc(doc(db, 'jpc_users', String(existingUser.id)), updatedUser);
+              showToast('Existing account updated with new role!', 'success');
+              setIsLoading(false);
+              setIsModalOpen(false);
+              setEditingUser(null);
+              setFormData({ username: '', display_name: '', role: 'jpc_sales', password: '', leader_id: null, calendly_link: '', candidate_id: '' });
+              return;
+            } else {
+              message = 'This email is already registered. Please use a different email or contact support.';
+            }
+          } else if (authError.code === 'auth/weak-password') {
+            message = 'Password should be at least 6 characters.';
+          }
+          showToast(message, 'error');
+          setIsLoading(false);
+          return;
+        }
       } else {
-        await apiService.updateUser(editingUser.id, userData);
-        showToast('User profile updated', 'success');
+        const updatedUser: User = {
+          ...editingUser,
+          username: formData.username,
+          display_name: formData.display_name,
+          email: email,
+          role: formData.role,
+          leader_id: formData.role === 'jpc_recruiter' ? formData.leader_id : null,
+          calendly_link: formData.role === 'jpc_proxy' ? formData.calendly_link : null,
+          candidate_id: formData.role === 'jpc_candidate' ? formData.candidate_id : null,
+        };
+        await setDoc(doc(db, 'jpc_users', String(updatedUser.id)), updatedUser);
+        showToast('User updated', 'success');
       }
 
       setIsModalOpen(false);
       setEditingUser(null);
       setFormData({ username: '', display_name: '', role: 'jpc_sales', password: '', leader_id: null, calendly_link: '', candidate_id: '' });
-      fetchData();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Save user error:', error);
-      showToast(error.message || 'Failed to save user account', 'error');
+      showToast('Failed to save user', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -167,10 +202,9 @@ export const Team: React.FC = () => {
     if (!deletingUser) return;
     setIsLoading(true);
     try {
-      await apiService.request(`/users/${deletingUser.id}`, { method: 'DELETE' });
+      await deleteDoc(doc(db, 'jpc_users', String(deletingUser.id)));
       showToast('User removed', 'success');
       setDeletingUser(null);
-      fetchData();
     } catch (error) {
       console.error('Delete user error:', error);
       showToast('Failed to remove user', 'error');
@@ -181,7 +215,47 @@ export const Team: React.FC = () => {
 
   const resetDatabase = async () => {
     if (user?.role !== 'administrator') return;
-    showToast('Database reset is not supported via REST API in this version.', 'info');
+    
+    setIsLoading(true);
+    try {
+      const collectionsToClear = [
+        'jpc_candidates',
+        'jpc_payments',
+        'jpc_promises',
+        'jpc_qc_checklist',
+        'jpc_followups',
+        'jpc_activity_logs',
+        'jpc_applications',
+        'jpc_notifications',
+        'jpc_report_logs',
+        'jpc_resume_requests',
+        'jpc_interviews'
+      ];
+
+      for (const collName of collectionsToClear) {
+        const snapshot = await getDocs(collection(db, collName));
+        
+        // Process in batches of 500 to avoid Firestore limits
+        const docs = snapshot.docs;
+        for (let i = 0; i < docs.length; i += 500) {
+          const batch = writeBatch(db);
+          const chunk = docs.slice(i, i + 500);
+          chunk.forEach((doc) => {
+            batch.delete(doc.ref);
+          });
+          await batch.commit();
+        }
+        console.log(`Cleared collection: ${collName}`);
+      }
+
+      showToast('Database reset successfully. All data except team members has been removed.', 'success');
+      setIsResetModalOpen(false);
+    } catch (error) {
+      console.error('Reset database error:', error);
+      showToast('Failed to reset database. Check console for details.', 'error');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const seedAllUsers = async () => {
@@ -191,17 +265,17 @@ export const Team: React.FC = () => {
     const USERS_TO_CREATE = [
       { display_name: "Yash Pandya", email: "yash.pandya@auriic.co", password: "Auriic@1031", role: "jpc_sysadmin", username: "yash.pandya" },
       { display_name: "Faiz Ahmadi", email: "care@auriic.co", password: "Auriic@1031", role: "jpc_cs", username: "care" },
-      { display_name: "Pritesh chauhan", email: "pritesh.chauhan@auriic.co", password: "Auriic@1031", role: "administrator", username: "pritesh.chauhan" },
-      { display_name: "Khushi Patel", email: "khushi.patel@auriic.co", password: "Kp@Auriic1301", role: "jpc_marketing", username: "khushi.patel" },
-      { display_name: "Bharat Dhrangiya", email: "bharat.dhrangiya@auriic.co", password: "Bd@Auriic1301", role: "jpc_marketing", username: "bharat.dhrangiya" },
+      { display_name: "Pritesh chauhan", email: "pritesh.chauhan@auriic.co", password: "Auriic@1031", role: "jpc_manager", username: "pritesh.chauhan" },
+      { display_name: "Khushi Patel", email: "khushi.patel@auriic.co", password: "Kp@Auriic1301", role: "jpc_lead_gen", username: "khushi.patel" },
+      { display_name: "Bharat Dhrangiya", email: "bharat.dhrangiya@auriic.co", password: "Bd@Auriic1301", role: "jpc_lead_gen", username: "bharat.dhrangiya" },
       { display_name: "Vakas Panja", email: "vakas.panja@auriic.co", password: "Vp@Auriic1301", role: "jpc_sales", username: "vakas.panja" },
       { display_name: "Tirth Bhatt", email: "tirth.bhatt@auriic.co", password: "Tb@Auriic1301", role: "jpc_sales", username: "tirth.bhatt" },
       { display_name: "Pratik Shah", email: "pratik.shah@auriic.co", password: "Ps@Auriic1301", role: "jpc_sales", username: "pratik.shah" },
       { display_name: "Tanya Bhalla", email: "tanyabhalla@auriic.co", password: "Tb@Auriic1301", role: "jpc_sales", username: "tanyabhalla" },
       { display_name: "Hemant Gokhale", email: "hemant.gokhale@auriic.co", password: "Hg@Auriic1301", role: "jpc_resume", username: "hemant.gokhale" },
       { display_name: "Nihal Khalyani", email: "nihal.khalyani@auriic.co", password: "Nk@Auriic1301", role: "jpc_resume", username: "nihal.khalyani" },
-      { display_name: "Mohit Panchal", email: "mohit.panchal@auriic.co", password: "Mp@Auric1301", role: "jpc_marketing", username: "mohit.panchal" },
-      { display_name: "Nikhil Sevak", email: "nikhil.sevak@auriic.co", password: "Ns@Auric1301", role: "jpc_marketing", username: "nikhil.sevak" },
+      { display_name: "Mohit Panchal", email: "mohit.panchal@auriic.co", password: "Mp@Auriic1301", role: "jpc_marketing", username: "mohit.panchal" },
+      { display_name: "Nikhil Sevak", email: "nikhil.sevak@auriic.co", password: "Ns@Auriic1301", role: "jpc_marketing", username: "nikhil.sevak" },
       { display_name: "Vansh Patel", email: "vansh.patel@auriic.co", password: "Vp@Auriic1301", role: "jpc_recruiter", username: "vansh.patel" },
       { display_name: "Siddharth Kamdar", email: "siddharth.kamdar@auriic.co", password: "Sk@Auriic1301", role: "jpc_recruiter", username: "siddharth.kamdar" },
       { display_name: "Deep Kansara", email: "deep.kansara@auriic.co", password: "Dk@Auriic1301", role: "jpc_recruiter", username: "deep.kansara" },
@@ -218,28 +292,41 @@ export const Team: React.FC = () => {
       { display_name: "Madhavi Paneliya", email: "madhavi.paneliya@auriic.co", password: "Mp@Auriic1301", role: "jpc_recruiter", username: "madhavi.paneliya" },
       { display_name: "Disha Shrimali", email: "disha.shrimali@auriic.co", password: "Ds@Auriic1301", role: "jpc_recruiter", username: "disha.shrimali" },
       { display_name: "Avantika Gidhavani", email: "avantika.gidhavani@auriic.co", password: "Ag@Auriic1301", role: "jpc_recruiter", username: "avantika.gidhavani" },
-      { display_name: "Rudra Rawal", email: "rudraks.rawal@auriic.co", password: "Rr@Auriic1301", role: "jpc_proxy", username: "rudraks.rawal" },
-      { display_name: "Apoorva Indrekar", email: "apoorva.indrekar@auriic.co", password: "Ai@Auriic130", role: "jpc_sales", username: "apoorva.indrekar" },
+      { display_name: "Rudra Rawal", email: "rudraksh.rawal@auriic.co", password: "Rr@Auriic1301", role: "jpc_proxy", username: "rudraksh.rawal" },
+      { display_name: "Apoorva Indrekar", email: "apoorva.indrekar@auriic.co", password: "Ai@Auriic130", role: "jpc_sales", username: "apoorva.indrekar" }
     ];
 
     let createdCount = 0;
-    try {
-      for (const u of USERS_TO_CREATE) {
-        if (team.some(t => t.email === u.email)) continue;
-        try {
-          await apiService.createUser(u);
-          createdCount++;
-        } catch (e: any) {
-          console.log(`Error creating ${u.email}:`, e.message);
-        }
+    const secondaryApp = initializeApp(firebaseConfig, 'SecondaryBatch' + Date.now());
+    const secondaryAuth = getAuth(secondaryApp);
+
+    for (const u of USERS_TO_CREATE) {
+      if (team.some(t => t.email === u.email)) continue; // skip existing
+
+      try {
+        const { user: fUser } = await createUserWithEmailAndPassword(secondaryAuth, u.email, u.password);
+        await updateProfile(fUser, { displayName: u.display_name });
+        const newUser: User = {
+          id: fUser.uid,
+          username: u.username,
+          display_name: u.display_name,
+          email: u.email,
+          role: u.role as UserRole,
+          leader_id: null,
+          calendly_link: null,
+          candidate_id: null,
+          created_at: new Date().toISOString(),
+        };
+        await setDoc(doc(db, 'jpc_users', String(newUser.id)), newUser);
+        createdCount++;
+        await secondarySignOut(secondaryAuth);
+      } catch (e: any) {
+        console.log(`Error creating ${u.email}:`, e.message);
       }
-      showToast(`Added ${createdCount} new users via API.`, 'success');
-      fetchData();
-    } catch (error) {
-      console.error('Batch error:', error);
-    } finally {
-      setIsLoading(false);
     }
+    
+    showToast(`Batch operation complete. Added ${createdCount} new users.`, 'success');
+    setIsLoading(false);
   };
 
   if (isLoading) {

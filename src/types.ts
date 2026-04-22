@@ -27,7 +27,6 @@ export interface User {
   leader_id?: string | number | null;
   calendly_link?: string | null;
   calendly_token?: string;
-  is_active?: boolean | number;
   created_at: string;
 }
 

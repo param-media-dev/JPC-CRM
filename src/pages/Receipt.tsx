@@ -2,17 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { getCandidateById, getUserById, subscribeToCollection } from '../services/storage';
 import { Payment, Candidate, User } from '../types';
 import { Printer, ArrowLeft, CheckCircle2 } from 'lucide-react';
-import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { apiService } from '../services/apiService';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
 
 export const Receipt: React.FC = () => {
   const { isAuthReady } = useAuth();
-  const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
-  
-  const payId = searchParams.get('pay_id') || new URLSearchParams(window.location.hash.split('?')[1]).get('pay_id');
-  const candId = searchParams.get('cand_id') || new URLSearchParams(window.location.hash.split('?')[1]).get('cand_id');
+  const params = new URLSearchParams(window.location.hash.split('?')[1]);
+  const payId = params.get('pay_id');
+  const candId = params.get('cand_id');
 
   const [payment, setPayment] = useState<Payment | null>(null);
   const [candidate, setCandidate] = useState<Candidate | null>(null);
@@ -22,31 +20,30 @@ export const Receipt: React.FC = () => {
   useEffect(() => {
     if (!isAuthReady || !payId || !candId) return;
 
-    const fetchData = async () => {
-      setIsLoading(true);
-      try {
-        const [cand, payments] = await Promise.all([
-          apiService.getCandidate(candId),
-          apiService.getPayments({ candidate_id: candId })
-        ]);
+    const unsubPayment = onSnapshot(doc(db, 'jpc_payments', String(payId)), async (snap) => {
+      if (snap.exists()) {
+        const pData = snap.data() as Payment;
+        setPayment(pData);
         
-        setCandidate(cand);
-        const pData = (payments as any[]).find(p => String(p.id) === String(payId));
-        if (pData) {
-          setPayment(pData);
-          if (pData.created_by) {
-            const userData = await apiService.getUser(pData.created_by);
-            setCreator(userData);
-          }
+        // Fetch creator
+        if (pData.created_by) {
+          const uSnap = await getDoc(doc(db, 'jpc_users', String(pData.created_by)));
+          if (uSnap.exists()) setCreator(uSnap.data() as User);
         }
-      } catch (error) {
-        console.error('Failed to fetch receipt data:', error);
-      } finally {
-        setIsLoading(false);
       }
-    };
+    });
 
-    fetchData();
+    const unsubCandidate = onSnapshot(doc(db, 'jpc_candidates', String(candId)), (snap) => {
+      if (snap.exists()) {
+        setCandidate(snap.data() as Candidate);
+      }
+      setIsLoading(false);
+    });
+
+    return () => {
+      unsubPayment();
+      unsubCandidate();
+    };
   }, [isAuthReady, payId, candId]);
 
   if (isLoading) {
@@ -62,7 +59,7 @@ export const Receipt: React.FC = () => {
       <div className="h-screen flex items-center justify-center bg-bg-primary">
         <div className="text-center">
           <p className="text-text-secondary">Receipt not found.</p>
-          <Link to="/dashboard" className="text-accent-blue hover:underline mt-4 block">Back to Dashboard</Link>
+          <a href="#dashboard" className="text-accent-blue hover:underline mt-4 block">Back to Dashboard</a>
         </div>
       </div>
     );
@@ -72,13 +69,13 @@ export const Receipt: React.FC = () => {
     <div className="min-h-screen bg-bg-primary p-4 md:p-8">
       <div className="max-w-3xl mx-auto space-y-6">
         <div className="flex items-center justify-between no-print">
-          <button 
-            onClick={() => navigate(`/candidate/${candidate.id}`)}
+          <a 
+            href={`#candidate?id=${candidate.id}`}
             className="flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors font-bold"
           >
             <ArrowLeft className="w-5 h-5" />
             Back to Candidate
-          </button>
+          </a>
           <button 
             onClick={() => window.print()}
             className="flex items-center gap-2 px-6 py-2 bg-accent-blue text-white font-bold rounded-xl hover:bg-accent-blue/90 transition-all shadow-lg shadow-accent-blue/20"

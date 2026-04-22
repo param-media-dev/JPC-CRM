@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "mkdir -p dist && vite build && esbuild server.ts --bundle --platform=node --format=esm --outfile=dist/server.js --packages=external",
+    "build": "npm run clean && vite build && esbuild server.ts --bundle --platform=node --format=esm --outfile=dist/server.js --packages=external",
     "start": "node dist/server.js",
-    "preview": "npx vite preview",
-    "lint": "npx tsc --noEmit"
+    "preview": "vite preview",
+    "clean": "rm -rf dist build",
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
@@ -24,6 +25,8 @@
     "dotenv": "^17.2.3",
     "esbuild": "^0.28.0",
     "express": "^5.2.1",
+    "firebase": "^12.11.0",
+    "firebase-admin": "^13.8.0",
     "form-data": "^4.0.5",
     "lucide-react": "^0.546.0",
     "motion": "^12.38.0",
@@ -31,7 +34,6 @@
     "pdfjs-dist": "^5.6.205",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^7.14.2",
     "recharts": "^3.8.1",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.1.14",

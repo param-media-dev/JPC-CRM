@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
+  subscribeToCollection,
   saveCandidate, 
   logActivity, 
   addNotification,
@@ -61,27 +61,18 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { apiService } from '../services/apiService';
 import { Candidate, Payment, Promise as PromiseType, QCChecklistItem, FollowUp, ActivityLog, User, Stage, ResumeChangeRequest, Application, InterviewRequest } from '../types';
+import { query, collection, where, onSnapshot, doc, setDoc, getDocs } from 'firebase/firestore';
+import { db, firebaseConfig } from '../firebase';
+import { initializeApp } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword, signOut as secondarySignOut, updateProfile } from 'firebase/auth';
 
 export const CandidateDetail: React.FC = () => {
   const { user, isAuthReady } = useAuth();
   const { showToast } = useToast();
-  const navigate = useNavigate();
-  const { id: routeId } = useParams<{ id: string }>();
-  const [id, setId] = useState<string | undefined>(routeId);
-
-  useEffect(() => {
-    if (!id) {
-      const hashParams = new URLSearchParams(window.location.hash.split('?')[1]);
-      const hashId = hashParams.get('id');
-      if (hashId) {
-        setId(hashId);
-        // Clean up hash and navigate to proper URL
-        navigate(`/candidate/${hashId}`, { replace: true });
-      }
-    }
-  }, [id, navigate, routeId]);
+  
+  const params = new URLSearchParams(window.location.hash.split('?')[1]);
+  const id = params.get('id');
 
   const isCandidate = user?.role === 'candidate' || user?.role === 'jpc_candidate';
   const isLeadGen = user?.role === 'jpc_lead_gen';
@@ -106,110 +97,92 @@ export const CandidateDetail: React.FC = () => {
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchAllData = useCallback(async () => {
-    if (!id) return;
-    setIsLoading(true);
-    try {
-      const [
-        candResp,
-        paymentsResp,
-        checklistResp,
-        followUpsResp,
-        activityLogsResp,
-        appsResp,
-        interviewsResp,
-        usersResp
-      ] = await Promise.all([
-        apiService.getCandidate(id),
-        apiService.getPayments({ candidate_id: id }),
-        Promise.resolve([]), 
-        apiService.getFollowups({ candidate_id: id }),
-        Promise.resolve([]),
-        apiService.getApplications({ candidate_id: id }),
-        apiService.getInterviews({ candidate_id: id }),
-        apiService.getUsers()
-      ]);
-
-      const candData = (candResp as any)?.data || candResp;
-      const paymentsData = (paymentsResp as any)?.data || paymentsResp;
-      const followUpsData = (followUpsResp as any)?.data || followUpsResp;
-      const appsData = (appsResp as any)?.data || appsResp;
-      const interviewsData = (interviewsResp as any)?.data || interviewsResp;
-      const usersData = (usersResp as any)?.data || usersResp;
-
-      if (candData && candData.id) {
-        // Role-based access check
-        if (user?.role === 'jpc_recruiter' && String(candData.assigned_recruiter) !== String(user.id)) {
-          showToast('Access denied. This candidate is not assigned to you.', 'error');
-          navigate('/candidates');
-          return;
-        }
-        if (user?.role === 'jpc_lead_gen' && String(candData.lead_generated_by) !== String(user.id)) {
-          showToast('Access denied. You did not generate this lead.', 'error');
-          navigate('/candidates');
-          return;
-        }
-
-        setCandidate(candData);
-        setPayments(Array.isArray(paymentsData) ? paymentsData.sort((a: any, b: any) => a.part_number - b.part_number) : []);
-        setFollowUps(Array.isArray(followUpsData) ? followUpsData : []);
-        setApplications(Array.isArray(appsData) ? appsData : []);
-        setInterviews(Array.isArray(interviewsData) ? interviewsData : []);
-        setAllUsers(Array.isArray(usersData) ? usersData : []);
-        // setChecklist(checklistData);
-      }
-    } catch (error) {
-      console.error('Failed to fetch candidate details:', error);
-      showToast('Failed to load candidate details', 'error');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [id, user, showToast]);
-
   useEffect(() => {
     if (!isAuthReady || !id) return;
 
     // Security: Candidates can only see their own profile
     if ((user?.role === 'candidate' || user?.role === 'jpc_candidate') && user.candidate_id !== id) {
       showToast('Access denied. Redirecting to your profile.', 'error');
-      navigate(`/candidate/${user.candidate_id}`);
+      window.location.hash = `#candidate?id=${user.candidate_id}`;
       return;
     }
 
-    fetchAllData();
-  }, [isAuthReady, id, user, fetchAllData, navigate, showToast]);
+    const unsubCandidate = onSnapshot(doc(db, 'jpc_candidates', id), (doc) => {
+      if (doc.exists()) {
+        const data = doc.data() as Candidate;
+        
+        // Role-based access check
+        if (user?.role === 'jpc_recruiter' && String(data.assigned_recruiter) !== String(user.id)) {
+          showToast('Access denied. This candidate is not assigned to you.', 'error');
+          window.location.hash = '#candidates';
+          return;
+        }
+        if (user?.role === 'jpc_lead_gen' && String(data.lead_generated_by) !== String(user.id)) {
+          showToast('Access denied. You did not generate this lead.', 'error');
+          window.location.hash = '#candidates';
+          return;
+        }
 
-  const salesUsers = allUsers.filter(u => 
-    u.role === 'jpc_sales' || 
-    u.role === 'jpc_manager' || 
-    u.role === 'administrator' || 
-    u.role === 'jpc_sysadmin'
-  );
-  const csUsers = allUsers.filter(u => 
-    u.role === 'jpc_cs' || 
-    u.role === 'jpc_manager' || 
-    u.role === 'administrator' || 
-    u.role === 'jpc_sysadmin'
-  );
-  const resumeUsers = allUsers.filter(u => 
-    u.role === 'jpc_resume' || 
-    u.role === 'jpc_manager' || 
-    u.role === 'administrator' || 
-    u.role === 'jpc_sysadmin'
-  );
-  const marketingLeaders = allUsers.filter(u => 
-    u.role === 'jpc_marketing' || 
-    u.role === 'jpc_manager' || 
-    u.role === 'administrator' || 
-    u.role === 'jpc_sysadmin'
-  );
-  const marketingUsers = allUsers.filter(u => 
-    u.role === 'jpc_marketing_support' || 
-    u.role === 'jpc_marketing' || 
-    u.role === 'jpc_manager' || 
-    u.role === 'administrator' || 
-    u.role === 'jpc_sysadmin'
-  );
+        setCandidate(data);
+        setIsLoading(false);
+      }
+    });
+
+    const unsubPayments = onSnapshot(query(collection(db, 'jpc_payments'), where('candidate_id', '==', id)), (snap) => {
+      setPayments(snap.docs.map(d => d.data() as Payment).sort((a, b) => a.part_number - b.part_number));
+    });
+
+    const unsubPromises = onSnapshot(query(collection(db, 'jpc_promises'), where('candidate_id', '==', id)), (snap) => {
+      setPromises(snap.docs.map(d => d.data() as PromiseType).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+    });
+
+    const unsubChecklist = onSnapshot(query(collection(db, 'jpc_qc_checklist'), where('candidate_id', '==', id)), (snap) => {
+      setChecklist(snap.docs.map(d => d.data() as QCChecklistItem).sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()));
+    });
+
+    const unsubFollowUps = onSnapshot(query(collection(db, 'jpc_followups'), where('candidate_id', '==', id)), (snap) => {
+      setFollowUps(snap.docs.map(d => d.data() as FollowUp));
+    });
+
+    const unsubActivity = onSnapshot(query(collection(db, 'jpc_activity_logs'), where('candidate_id', '==', id)), (snap) => {
+      setActivityLogs(snap.docs.map(d => d.data() as ActivityLog));
+    });
+
+    const unsubResume = onSnapshot(query(collection(db, 'jpc_resume_requests'), where('candidate_id', '==', id)), (snap) => {
+      setResumeRequests(snap.docs.map(d => d.data() as ResumeChangeRequest));
+    });
+
+    const unsubApps = onSnapshot(query(collection(db, 'jpc_applications'), where('candidate_id', '==', id)), (snap) => {
+      setApplications(snap.docs.map(d => d.data() as Application));
+    });
+
+    const unsubInterviews = onSnapshot(query(collection(db, 'jpc_interviews'), where('candidate_id', '==', id)), (snap) => {
+      setInterviews(snap.docs.map(d => d.data() as InterviewRequest));
+    });
+
+    const unsubUsers = subscribeToCollection<User>('jpc_users', (data) => {
+      setAllUsers(data);
+    });
+
+    return () => {
+      unsubCandidate();
+      unsubPayments();
+      unsubPromises();
+      unsubChecklist();
+      unsubFollowUps();
+      unsubActivity();
+      unsubResume();
+      unsubApps();
+      unsubInterviews();
+      unsubUsers();
+    };
+  }, [isAuthReady, id]);
+
+  const salesUsers = allUsers.filter(u => u.role === 'jpc_sales');
+  const csUsers = allUsers.filter(u => u.role === 'jpc_cs');
+  const resumeUsers = allUsers.filter(u => u.role === 'jpc_resume');
+  const marketingLeaders = allUsers.filter(u => u.role === 'jpc_marketing');
+  const marketingUsers = allUsers.filter(u => u.role === 'jpc_marketing_support' || u.role === 'jpc_marketing');
 
   // Edit states
   const [isEditingPersonal, setIsEditingPersonal] = useState(false);
@@ -344,13 +317,13 @@ export const CandidateDetail: React.FC = () => {
         <div className="text-center">
           <AlertCircle className="w-12 h-12 text-text-muted mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-text-primary">Candidate Not Found</h2>
-          <Link to="/candidates" className="text-accent-blue hover:underline mt-2 block">Back to Candidates</Link>
+          <a href="#candidates" className="text-accent-blue hover:underline mt-2 block">Back to Candidates</a>
         </div>
       </div>
     );
   }
 
-  const hasPortal = Array.isArray(allUsers) && allUsers.some(u => u.candidate_id === candidate.id);
+  const hasPortal = allUsers.some(u => u.candidate_id === candidate.id);
 
   const generateRandomPassword = () => {
     const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
@@ -362,7 +335,7 @@ export const CandidateDetail: React.FC = () => {
   };
 
   const handleGenerateAccess = async () => {
-    if (!candidate?.email) {
+    if (!candidate.email) {
       showToast('Candidate must have an email address to generate access.', 'error');
       return;
     }
@@ -371,22 +344,79 @@ export const CandidateDetail: React.FC = () => {
     const password = generateRandomPassword();
 
     try {
-      // Create user record via REST API
-      const newUser: User = {
-        username: candidate.email.split('@')[0],
-        display_name: candidate.full_name,
-        role: 'candidate',
-        candidate_id: candidate.id,
-      } as User;
-
-      await apiService.createUser(newUser);
+      // 1. Create Firebase Auth user using a secondary app instance
+      // This allows creating a user without logging out the current admin
+      const secondaryApp = initializeApp(firebaseConfig, 'SecondaryCandidate');
+      const secondaryAuth = getAuth(secondaryApp);
       
-      setGeneratedPassword(password);
-      showToast('Portal access created successfully!', 'success');
-      await logActivity(candidate.id, 'Portal access generated', `Login credentials created for ${candidate.email}`, user?.id || null);
-    } catch (error: any) {
-      console.error('Portal creation error:', error);
-      showToast(error.message || 'Failed to create portal access', 'error');
+      try {
+        const { user: fUser } = await createUserWithEmailAndPassword(
+          secondaryAuth, 
+          candidate.email, 
+          password
+        );
+        await updateProfile(fUser, { displayName: candidate.full_name });
+        
+        // 2. Create user record in Firestore (jpc_users)
+        const newUser: User = {
+          id: fUser.uid,
+          username: candidate.email.split('@')[0],
+          display_name: candidate.full_name,
+          role: 'candidate',
+          candidate_id: candidate.id,
+          created_at: new Date().toISOString()
+        };
+
+        await setDoc(doc(db, 'jpc_users', fUser.uid), newUser);
+        
+        // 3. Update candidate document to remove temp password if any
+        await saveCandidate({
+          ...candidate,
+          temp_portal_password: null
+        } as Candidate, user?.id || null);
+
+        await secondarySignOut(secondaryAuth);
+        
+        setGeneratedPassword(password);
+        showToast('Portal access created successfully!', 'success');
+        await logActivity(candidate.id, 'Portal access generated', `Login credentials created for ${candidate.email}`, user?.id || null);
+      } catch (authError: any) {
+        console.error('Auth creation error:', authError);
+        let message = 'Failed to create portal access';
+        
+        if (authError.code === 'auth/email-already-in-use') {
+          // Try to find if this user already exists in Firestore
+          const usersSnap = await getDocs(query(collection(db, 'jpc_users'), where('email', '==', candidate.email)));
+          
+          if (!usersSnap.empty) {
+            const existingUser = usersSnap.docs[0].data() as User;
+            
+            // If they exist but aren't linked to this candidate, link them
+            if (existingUser.candidate_id !== candidate.id) {
+              await setDoc(doc(db, 'jpc_users', String(existingUser.id)), { 
+                ...existingUser, 
+                candidate_id: candidate.id,
+                role: 'candidate' // Ensure they have the candidate role
+              });
+              
+              showToast('Existing account linked to this candidate!', 'success');
+              await logActivity(candidate.id, 'Portal access linked', `Existing account (${candidate.email}) was linked to this candidate profile`, user?.id || null);
+              setIsGeneratingAccess(false);
+              return;
+            } else {
+              message = 'This candidate already has portal access.';
+            }
+          } else {
+            message = 'This email is already registered in our system. Please use a different email or contact support to link the existing account.';
+          }
+        } else if (authError.code === 'auth/weak-password') {
+          message = 'Password should be at least 6 characters.';
+        }
+        showToast(message, 'error');
+      }
+    } catch (error) {
+      console.error('Generate access error:', error);
+      showToast('An error occurred while creating access', 'error');
     } finally {
       setIsGeneratingAccess(false);
     }
@@ -396,13 +426,9 @@ export const CandidateDetail: React.FC = () => {
     const oldNotes = candidate.notes;
     const newNotes = personalForm.notes;
     
-    const updatedCandidate = await saveCandidate({ ...candidate, ...personalForm } as Candidate, user?.id || null);
-    if (updatedCandidate) {
-      setCandidate(updatedCandidate);
-    }
+    await saveCandidate({ ...candidate, ...personalForm } as Candidate, user?.id || null);
     
     if (oldNotes !== newNotes) {
-      // ... notifications logic (omitted for brevity in replacement but kept in file)
       const teamMembers = [candidate.assigned_sales, candidate.assigned_cs, candidate.assigned_recruiter].filter(Boolean);
       for (const memberId of teamMembers) {
         await addNotification({
@@ -420,8 +446,7 @@ export const CandidateDetail: React.FC = () => {
   };
 
   const handleSaveEducation = async () => {
-    const updated = await saveCandidate({ ...candidate, ...educationForm } as Candidate, user?.id || null);
-    if (updated) setCandidate(updated);
+    await saveCandidate({ ...candidate, ...educationForm } as Candidate, user?.id || null);
     
     const teamMembers = [candidate.assigned_sales, candidate.assigned_cs, candidate.assigned_recruiter].filter(Boolean);
     for (const memberId of teamMembers) {
@@ -439,8 +464,7 @@ export const CandidateDetail: React.FC = () => {
   };
 
   const handleSavePackage = async () => {
-    const updated = await saveCandidate({ ...candidate, ...packageForm } as Candidate, user?.id || null);
-    if (updated) setCandidate(updated);
+    await saveCandidate({ ...candidate, ...packageForm } as Candidate, user?.id || null);
     
     // Check for assignments
     const assignmentFields = ['assigned_cs', 'assigned_resume', 'assigned_marketing_leader', 'assigned_recruiter', 'assigned_marketing', 'assigned_sales'];
@@ -461,8 +485,7 @@ export const CandidateDetail: React.FC = () => {
   };
 
   const handleSaveRemarks = async () => {
-    const updatedCandidate = await saveCandidate({ ...candidate, remarks: remarksForm } as Candidate, user?.id || null);
-    if (updatedCandidate) setCandidate(updatedCandidate);
+    await saveCandidate({ ...candidate, remarks: remarksForm } as Candidate, user?.id || null);
     await logActivity(candidate.id, 'Updated remarks', 'Candidate remarks were updated.', user?.id || null);
     setIsEditingRemarks(false);
     showToast('Remarks updated', 'success');
@@ -481,7 +504,6 @@ export const CandidateDetail: React.FC = () => {
         proof_filename: file.name
       };
       await updatePayment(updated);
-      window.location.reload();
       await logActivity(candidate!.id, 'Payment proof uploaded', `Proof uploaded for Part ${payment.part_number}`, user?.id || null);
       showToast('Payment proof uploaded', 'success');
     } catch (error) {
@@ -573,9 +595,19 @@ export const CandidateDetail: React.FC = () => {
     };
     
     await saveCandidate(updated, user?.id || null);
+    
+    const teamMembers = [candidate.assigned_sales, candidate.assigned_cs, candidate.assigned_recruiter].filter(Boolean);
+    for (const memberId of teamMembers) {
+      await addNotification({
+        recipient_id: memberId as string,
+        sender_id: user?.id || null,
+        type: 'system_alert',
+        message: `Candidate ${candidate.full_name} moved from ${oldStageLabel} to ${newStageLabel}.`
+      });
+    }
+
     await logActivity(candidate.id, 'Stage moved', `Moved from ${oldStageLabel} to ${newStageLabel}`, user?.id || null);
     showToast(`Moved to ${newStageLabel}`, 'success');
-    fetchAllData();
   };
 
   const handleToggleFlag = async (flag: keyof Candidate['flags']) => {
@@ -590,12 +622,10 @@ export const CandidateDetail: React.FC = () => {
   const handleCheckQC = async (item: QCChecklistItem) => {
     await updateQCChecklistItem({ ...item, checked: !item.checked });
     await logActivity(candidate.id, 'QC Item toggled', `QC Item '${item.item_label}' was toggled.`, user?.id || null);
-    window.location.reload();
   };
 
   const handleUpdateQCValue = async (item: QCChecklistItem, value: string) => {
     await updateQCChecklistItem({ ...item, value });
-    window.location.reload();
   };
 
   const handleResetChecklist = async () => {
@@ -634,7 +664,6 @@ export const CandidateDetail: React.FC = () => {
     await updatePayment({ ...payment, status: 'paid', paid_on: now() });
     await logActivity(candidate.id, 'Payment received', `Part ${payment.part_number} (₹${payment.amount}) marked as paid.`, user?.id || null);
     showToast('Payment marked as paid', 'success');
-    fetchAllData();
   };
 
   const handleAddPromise = async () => {
@@ -649,7 +678,6 @@ export const CandidateDetail: React.FC = () => {
     await logActivity(candidate.id, 'Promise made', `New promise: ${promiseText}`, user?.id || null);
     setPromiseText('');
     showToast('Promise added', 'success');
-    fetchAllData();
   };
 
   const handleAddFollowUp = async () => {
@@ -733,9 +761,9 @@ export const CandidateDetail: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
-          <Link to="/candidates" className="p-2 bg-bg-secondary border border-border-primary rounded-xl text-text-secondary hover:text-text-primary transition-all">
+          <a href="#candidates" className="p-2 bg-bg-secondary border border-border-primary rounded-xl text-text-secondary hover:text-text-primary transition-all">
             <ArrowLeft className="w-5 h-5" />
-          </Link>
+          </a>
           <div>
             <h1 className="text-3xl font-bold text-text-primary">{candidate.full_name}</h1>
             <div className="flex items-center gap-3 mt-1">
@@ -757,7 +785,7 @@ export const CandidateDetail: React.FC = () => {
                   try {
                     await deleteCandidate(candidate.id);
                     showToast('Candidate completely deleted', 'success');
-                    navigate('/candidates');
+                    window.location.hash = '#candidates';
                   } catch (err) {
                     showToast('Error deleting candidate', 'error');
                   }
@@ -1384,13 +1412,13 @@ export const CandidateDetail: React.FC = () => {
                           <>
                             <span className="text-[10px] px-2 py-1 bg-accent-green/10 text-accent-green font-bold rounded-full uppercase">Paid</span>
                             <div className="flex items-center gap-2">
-                              <Link 
-                                to={`/receipt?pay_id=${p.id}&cand_id=${candidate.id}`}
+                              <a 
+                                href={`#receipt?pay_id=${p.id}&cand_id=${candidate.id}`}
                                 className="p-2 text-text-secondary hover:text-accent-blue hover:bg-accent-blue/10 rounded-lg transition-all"
                                 title="View Receipt"
                               >
                                 <FileText className="w-4 h-4" />
-                              </Link>
+                              </a>
                               {p.proof_url || p.proof_base64 ? (
                                 <a 
                                   href={p.proof_url || p.proof_base64 || '#'}
@@ -1491,7 +1519,7 @@ export const CandidateDetail: React.FC = () => {
                           <select 
                             value={p.status} 
                             onChange={async (e) => {
-                              await updatePromise(p.id, { status: e.target.value as any });
+                              await updatePromise({...p, status: e.target.value as any});
                               await logActivity(candidate.id, 'Promise status updated', `Promise status changed to ${e.target.value}`, user?.id || null);
                             }}
                             className={cn(
@@ -1788,7 +1816,7 @@ export const CandidateDetail: React.FC = () => {
                 <Video className="w-5 h-5 text-accent-red" />
                 Interview History
               </h3>
-              <Link to="/interviews" className="text-xs font-bold text-accent-blue hover:underline">View All</Link>
+              <a href="#interviews" className="text-xs font-bold text-accent-blue hover:underline">View All</a>
             </div>
             <div className="p-6 space-y-4">
               {interviews.length > 0 ? (
@@ -1833,7 +1861,7 @@ export const CandidateDetail: React.FC = () => {
                 <TrendingUp className="w-5 h-5 text-accent-blue" />
                 Application Performance
               </h3>
-              <Link to="/app-tracker" className="text-xs font-bold text-accent-blue hover:underline">Tracker</Link>
+              <a href="#app-tracker" className="text-xs font-bold text-accent-blue hover:underline">Tracker</a>
             </div>
             <div className="p-6">
               <div className="grid grid-cols-2 gap-4">

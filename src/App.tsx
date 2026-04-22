@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ToastProvider } from './contexts/ToastContext';
-import { DataProvider } from './contexts/DataContext';
 import { LoginPage } from './pages/LoginPage';
 import { CandidateDashboard } from './pages/CandidateDashboard';
 import { Sidebar } from './components/Sidebar';
@@ -21,40 +19,47 @@ import { InterviewSupport } from './pages/InterviewSupport';
 import { AddCandidateModal } from './components/AddCandidateModal';
 import { NotificationList } from './components/NotificationList';
 import { SLAMonitor } from './components/SLAMonitor';
+import { seedData } from './services/seeding';
 import { migrateAllChecklists, testConnection } from './services/storage';
 import { Plus, Menu } from 'lucide-react';
 
 const AppContent: React.FC = () => {
   const { user, isLoading, isAuthReady } = useAuth();
-  const location = useLocation();
-  const navigate = useNavigate();
+  const [currentHash, setCurrentHash] = useState(window.location.hash || '#dashboard');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
   useEffect(() => {
-    if (isAuthReady && user) {
+    if (isAuthReady) {
       testConnection();
     }
-  }, [isAuthReady, user]);
+  }, [isAuthReady]);
 
   useEffect(() => {
-    window.scrollTo(0, 0);
-  }, [location.pathname]);
+    const handleHashChange = () => {
+      setCurrentHash(window.location.hash || '#dashboard');
+      window.scrollTo(0, 0);
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
 
   useEffect(() => {
     if (isAuthReady && user) {
       if (user.role === 'candidate' && user.candidate_id) {
-        const targetPath = `/candidate/${user.candidate_id}`;
-        if (location.pathname !== targetPath) {
-          navigate(targetPath);
+        const targetHash = `#candidate?id=${user.candidate_id}`;
+        if (window.location.hash !== targetHash) {
+          window.location.hash = targetHash;
         }
       }
       
+      // Only run maintenance tasks for administrators
       if (user.role === 'administrator' || user.role === 'jpc_sysadmin') {
         migrateAllChecklists().catch(console.error);
       }
     }
-  }, [isAuthReady, user, location.pathname, navigate]);
+  }, [isAuthReady, user]);
 
   if (isLoading) {
     return (
@@ -68,12 +73,61 @@ const AppContent: React.FC = () => {
     return <LoginPage />;
   }
 
-  const isReceiptPage = location.pathname.startsWith('/receipt');
+  const renderPage = () => {
+    const hash = currentHash.split('?')[0];
+    
+    if (user?.role === 'candidate' || user?.role === 'jpc_candidate') {
+      switch (hash) {
+        case '#dashboard': return <CandidateDashboard />;
+        case '#candidate': return <CandidateDetail />;
+        case '#receipt': return <Receipt />;
+        default: return <CandidateDashboard />;
+      }
+    }
+
+    switch (hash) {
+      case '#dashboard': 
+        return <Dashboard />;
+      case '#pipeline': 
+        if (user?.role === 'candidate') return <CandidateDetail />;
+        if (user?.role !== 'administrator' && user?.role !== 'jpc_sysadmin' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_cs' && user?.role !== 'jpc_recruiter' && user?.role !== 'jpc_marketing' && user?.role !== 'jpc_marketing_support' && user?.role !== 'jpc_sales') return <Dashboard />;
+        return <Pipeline />;
+      case '#candidates': 
+        if (user?.role === 'candidate') return <CandidateDetail />;
+        return <Candidates />;
+      case '#candidate': return <CandidateDetail />;
+      case '#followups': 
+        if (user?.role === 'candidate') return <CandidateDetail />;
+        return <FollowUps />;
+      case '#not-interested': 
+        if (user?.role !== 'administrator' && user?.role !== 'jpc_sysadmin' && user?.role !== 'jpc_manager') return <Dashboard />;
+        return <NotInterested />;
+      case '#team': 
+        if (user?.role !== 'administrator' && user?.role !== 'jpc_sysadmin' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_marketing') return <Dashboard />;
+        return <Team />;
+      case '#receipt': return <Receipt />;
+      case '#applications': 
+        if (user?.role !== 'administrator' && user?.role !== 'jpc_sysadmin' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_cs' && user?.role !== 'jpc_recruiter') return <Dashboard />;
+        return <AppTracker />;
+      case '#resume-log': 
+        if (user?.role !== 'administrator' && user?.role !== 'jpc_sysadmin' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_cs' && user?.role !== 'jpc_recruiter' && user?.role !== 'jpc_resume' && user?.role !== 'jpc_marketing') return <Dashboard />;
+        return <ResumeLogBook />;
+      case '#interviews': 
+        if (user?.role !== 'administrator' && user?.role !== 'jpc_sysadmin' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_cs' && user?.role !== 'jpc_recruiter' && user?.role !== 'jpc_proxy') return <Dashboard />;
+        return <InterviewSupport />;
+      default: 
+        if (user?.role === 'candidate') return <CandidateDetail />;
+        return <Dashboard />;
+    }
+  };
+
+  const isReceiptPage = currentHash.startsWith('#receipt');
 
   return (
     <div className="min-h-screen bg-bg-primary flex">
       {!isReceiptPage && (
         <Sidebar 
+          currentHash={currentHash} 
           isOpen={isSidebarOpen} 
           setIsOpen={setIsSidebarOpen} 
         />
@@ -95,15 +149,15 @@ const AppContent: React.FC = () => {
               </div>
             </div>
             
-            <div className="flex items-center gap-2 sm:gap-4 ml-auto">
+            <div className="flex items-center gap-4 ml-auto">
               <NotificationList />
               {user?.role !== 'candidate' && (
                 <button 
                   onClick={() => setIsAddModalOpen(true)}
-                  className="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2.5 bg-accent-blue text-white font-bold rounded-xl hover:bg-accent-blue/90 hover:-translate-y-0.5 transition-all shadow-[0_4px_12px_rgba(0,173,140,0.3)] ring-1 ring-white/10"
+                  className="flex items-center gap-2 px-4 py-2.5 bg-accent-blue text-white font-bold rounded-xl hover:bg-accent-blue/90 hover:-translate-y-0.5 transition-all shadow-[0_4px_12px_rgba(0,173,140,0.3)] ring-1 ring-white/10"
                 >
-                  <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
-                  <span className="hidden xs:inline text-xs sm:text-sm">Add New</span>
+                  <Plus className="w-5 h-5" />
+                  <span className="hidden sm:inline">Add Candidate</span>
                 </button>
               )}
             </div>
@@ -111,21 +165,7 @@ const AppContent: React.FC = () => {
         )}
 
         <div className={`p-6 md:p-10 max-w-7xl mx-auto w-full flex-1 ${isReceiptPage ? 'p-0 md:p-0 max-w-none' : ''}`}>
-          <Routes>
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/pipeline" element={<Pipeline />} />
-            <Route path="/candidates" element={<Candidates />} />
-            <Route path="/candidate/:id" element={<CandidateDetail />} />
-            <Route path="/followups" element={<FollowUps />} />
-            <Route path="/not-interested" element={<NotInterested />} />
-            <Route path="/team" element={<Team />} />
-            <Route path="/receipt" element={<Receipt />} />
-            <Route path="/applications" element={<AppTracker />} />
-            <Route path="/resume-log" element={<ResumeLogBook />} />
-            <Route path="/interviews" element={<InterviewSupport />} />
-            <Route path="/" element={<Dashboard />} />
-            <Route path="*" element={<Dashboard />} />
-          </Routes>
+          {renderPage()}
         </div>
       </main>
 
@@ -134,7 +174,7 @@ const AppContent: React.FC = () => {
         isOpen={isAddModalOpen} 
         onClose={() => setIsAddModalOpen(false)}
         onSuccess={() => {
-          // No reload needed, state should refresh
+          window.dispatchEvent(new HashChangeEvent('hashchange'));
         }}
       />
     </div>
@@ -143,16 +183,12 @@ const AppContent: React.FC = () => {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <ThemeProvider>
-        <AuthProvider>
-          <DataProvider>
-            <ToastProvider>
-              <AppContent />
-            </ToastProvider>
-          </DataProvider>
-        </AuthProvider>
-      </ThemeProvider>
-    </BrowserRouter>
+    <ThemeProvider>
+      <AuthProvider>
+        <ToastProvider>
+          <AppContent />
+        </ToastProvider>
+      </AuthProvider>
+    </ThemeProvider>
   );
 }

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
+import { subscribeToCollection } from '../services/storage';
 import { STAGES } from '../constants';
 import { Search, Filter, X, Package, Phone, Mail, MapPin, Calendar, Users, ChevronRight, MoreVertical, ShieldCheck, Plus, Send } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -9,15 +8,13 @@ import { cn } from '../lib/utils';
 import { Candidate, Stage, User, Application } from '../types';
 import { CandidateSheet } from '../components/CandidateSheet';
 import { TrackJobSheet } from '../components/TrackJobSheet';
-import { getUsers } from '../services/storage';
 
 export const Candidates: React.FC = () => {
-  const { user } = useAuth();
-  const { candidates: allCandidates, applications, isLoading } = useData();
+  const { user, isAuthReady } = useAuth();
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
-  const [searchParams] = useSearchParams();
-  
-  const candidates = useMemo(() => allCandidates.filter(c => c.current_stage !== 'not_interested'), [allCandidates]);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [stageFilter, setStageFilter] = useState('');
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
@@ -26,14 +23,33 @@ export const Candidates: React.FC = () => {
   const [isTrackSheetOpen, setIsTrackSheetOpen] = useState(false);
   
   useEffect(() => {
-    getUsers().then(setAllUsers);
-  }, []);
+    if (!isAuthReady) return;
+    const unsub = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
+      setCandidates(data.filter(c => c.current_stage !== 'not_interested'));
+      setIsLoading(false);
+    });
+
+    const unsubUsers = subscribeToCollection<User>('jpc_users', (data) => {
+      setAllUsers(data);
+    });
+
+    const unsubApps = subscribeToCollection<Application>('jpc_applications', (data) => {
+      setApplications(data);
+    });
+
+    return () => {
+      unsub();
+      unsubUsers();
+      unsubApps();
+    };
+  }, [isAuthReady]);
 
   // Get stage from URL if present
   useEffect(() => {
-    const stage = searchParams.get('stage');
+    const params = new URLSearchParams(window.location.hash.split('?')[1]);
+    const stage = params.get('stage');
     if (stage) setStageFilter(stage);
-  }, [searchParams]);
+  }, []);
 
   const filteredCandidates = useMemo(() => {
     return candidates.filter(c => {
@@ -159,7 +175,7 @@ export const Candidates: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      {Array.isArray(allUsers) && allUsers.some(u => u.candidate_id === candidate.id) ? (
+                      {allUsers.some(u => u.candidate_id === candidate.id) ? (
                         <div className="flex items-center gap-1.5 text-accent-green">
                           <ShieldCheck className="w-4 h-4" />
                           <span className="text-[10px] font-bold uppercase">Active</span>

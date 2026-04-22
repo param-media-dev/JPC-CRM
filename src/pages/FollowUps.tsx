@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
-import { updateFollowUp, logActivity } from '../services/storage';
+import { subscribeToCollection, updateFollowUp, logActivity } from '../services/storage';
 import { STAGES } from '../constants';
 import { Clock, CheckCircle2, Calendar, User, ArrowRight, AlertCircle, Search, Filter } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -10,11 +8,30 @@ import { cn } from '../lib/utils';
 import { FollowUp, Candidate, Stage } from '../types';
 
 export const FollowUps: React.FC = () => {
-  const { user } = useAuth();
-  const navigate = useNavigate();
-  const { followUps, candidates, isLoading } = useData();
+  const { user, isAuthReady } = useAuth();
+  const [followUps, setFollowUps] = useState<FollowUp[]>([]);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'pending' | 'done'>('pending');
+
+  useEffect(() => {
+    if (!isAuthReady) return;
+
+    const unsubFollowUps = subscribeToCollection<FollowUp>('jpc_followups', (data) => {
+      setFollowUps(data);
+      setIsLoading(false);
+    });
+
+    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
+      setCandidates(data);
+    });
+
+    return () => {
+      unsubFollowUps();
+      unsubCandidates();
+    };
+  }, [isAuthReady]);
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -126,7 +143,7 @@ export const FollowUps: React.FC = () => {
 
                 <div className="flex-1 space-y-4">
                   <div 
-                    onClick={() => navigate(`/candidate/${candidate?.id}`)}
+                    onClick={() => window.location.hash = `#candidate?id=${candidate?.id}`}
                     className="cursor-pointer"
                   >
                     <h3 className="font-bold text-text-primary group-hover:text-accent-blue transition-colors">{candidate?.full_name || 'Unknown Candidate'}</h3>
@@ -156,12 +173,12 @@ export const FollowUps: React.FC = () => {
                       <span className="text-xs font-bold uppercase">Mark Done</span>
                     </button>
                   )}
-                  <Link 
-                    to={`/candidate/${candidate?.id}`}
+                  <a 
+                    href={`#candidate?id=${candidate?.id}`}
                     className="p-2 bg-bg-tertiary rounded-xl text-text-muted hover:text-accent-blue transition-all"
                   >
                     <ArrowRight className="w-4 h-4" />
-                  </Link>
+                  </a>
                 </div>
               </motion.div>
             );
