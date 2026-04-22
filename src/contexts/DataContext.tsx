@@ -31,34 +31,24 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!user) return;
     setIsLoading(true);
     try {
-      // Fetch candidates with pagination
-      let allCandidates: Candidate[] = [];
-      let currentCandPage = 1;
-      let totalCandPages = 1;
-
-      do {
-        const response = await apiService.request(`/candidates?page=${currentCandPage}`);
-        let data = Array.isArray(response) ? response : (response as any).data || [];
-        totalCandPages = (response as any).total_pages || 1;
-        allCandidates = [...allCandidates, ...data];
-        currentCandPage++;
-      } while (currentCandPage <= totalCandPages);
-
       const results = await Promise.all([
+        apiService.getCandidates(),
         apiService.getFollowups({ done: 0 }),
         apiService.getInterviews(),
         apiService.getApplications()
       ]);
 
-      const [followUpsData, interviewsData, appsData] = results.map(r => 
+      const [candidatesData, followUpsData, interviewsData, appsData] = results.map(r => 
         Array.isArray(r) ? r : (r as any)?.data
       );
 
-      setCandidates(allCandidates);
+      setCandidates(Array.isArray(candidatesData) ? candidatesData : []);
       setFollowUps(Array.isArray(followUpsData) ? followUpsData : []);
       setInterviews(Array.isArray(interviewsData) ? interviewsData : []);
       setApplications(Array.isArray(appsData) ? appsData : []);
       
+      // Notifications and Resume requests might need specific endpoints or filters
+      // For now, setting empty or mock if not in API summary
       setNotifications([]);
       setResumeRequests([]);
 

@@ -72,51 +72,27 @@ export const checkDuplicateCandidate = async (phone: string, email: string, what
   return null; 
 };
 
-export const saveCandidate = async (candidate: Candidate, userId: string | null): Promise<Candidate> => {
+export const saveCandidate = async (candidate: Candidate, userId: string | null) => {
   try {
-    let response: any;
-    
-    // Check if it's a new candidate (no ID or temp ID)
-    const isNew = !candidate.id || String(candidate.id).startsWith('temp_');
-    
-    if (isNew) {
-      console.log('Creating new candidate...');
-      const { id, ...candidateData } = candidate;
-      response = await apiService.createCandidate(candidateData);
-    } else {
-      console.log('Updating existing candidate:', candidate.id);
+    if (candidate.id && !candidate.id.includes('temp')) {
       try {
-        response = await apiService.updateCandidate(candidate.id, candidate);
+        await apiService.updateCandidate(candidate.id, candidate);
       } catch (error: any) {
-        // Fallback for cases where it might still be missing on server
         if (error.message && (error.message.includes('Not found') || error.message.includes('404'))) {
-          console.warn(`Candidate ${candidate.id} not found on server, attempting to create instead.`);
+          console.warn(`Candidate ${candidate.id} not found, attempting to create instead.`);
           const { id, ...candidateData } = candidate;
-          response = await apiService.createCandidate(candidateData);
+          await apiService.createCandidate(candidateData);
         } else {
           throw error;
         }
       }
+    } else {
+      const { id, ...candidateData } = candidate;
+      await apiService.createCandidate(candidateData);
     }
-    
-    // Robust response extraction
-    let result: any = response;
-    if (response && response.data) {
-      result = response.data;
-    }
-    // If it's an array, take the first element
-    if (Array.isArray(result)) {
-      result = result[0];
-    }
-    
-    if (!result || !result.id) {
-      console.error('API response missing candidate ID:', response);
-    }
-
-    return result as Candidate;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `candidates/${candidate.id}`);
-    throw error;
+    throw error; // Re-throw to inform caller
   }
 };
 

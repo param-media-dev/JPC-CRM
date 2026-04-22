@@ -1,7 +1,6 @@
 import { Candidate, User, Payment, FollowUp, InterviewRequest, ActivityLog, Application, Notification as AppNotification } from '../types';
 
-// Use the local proxy route to avoid CORS errors from WordPress on 401/429 status codes
-const BASE_URL = '/api/jpc';
+const BASE_URL = 'https://test-wp.param.club/wp-json/jpc/v1';
 
 class ApiService {
   private token: string | null = localStorage.getItem('jpc_auth_token');

@@ -168,8 +168,6 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
     }
   };
 
-  const [isSaving, setIsSaving] = useState(false);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -183,114 +181,96 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
       return;
     }
 
-    setIsSaving(true);
-    try {
-      // Duplicate check using local data
-      const isDuplicate = candidates.some(c => 
-        (formData.email && c.email?.toLowerCase() === formData.email.toLowerCase()) || 
-        (formData.phone && c.phone === formData.phone)
-      );
+    const duplicateError = await checkDuplicateCandidate(formData.phone, formData.email, formData.whatsapp);
+    if (duplicateError) {
+      showToast(duplicateError, 'error');
+      return;
+    }
 
-      if (isDuplicate) {
-        showToast('A candidate with this Email or Phone already exists', 'error');
-        setIsSaving(false);
-        return;
+    const id = generateId();
+    const newCandidate: Candidate = {
+      id,
+      full_name: formData.full_name,
+      phone: formData.phone,
+      whatsapp: formData.whatsapp,
+      email: formData.email,
+      job_interest: formData.job_interest,
+      domain_interested: formData.domain_interested,
+      location: formData.location,
+      education: formData.education,
+      degree: extraData.degree,
+      university: extraData.university,
+      graduation_year: extraData.graduation_year,
+      experience_years: extraData.experience_years,
+      current_company: 'N/A',
+      current_designation: extraData.current_designation,
+      skills: extraData.skills,
+      linkedin_url: extraData.linkedin_url,
+      lead_source: formData.lead_source,
+      lead_generated_by: user?.id || null,
+      assigned_sales: formData.assigned_sales || null,
+      assigned_cs: null,
+      assigned_resume: null,
+      assigned_marketing_leader: null,
+      assigned_recruiter: null,
+      assigned_marketing: null,
+      package_name: '',
+      package_amount: 0,
+      domain_suggested: '',
+      notes: formData.notes,
+      current_stage: 'lead_generation',
+      resume_url: resumeData.url,
+      resume_base64: resumeData.base64,
+      resume_filename: resumeData.filename,
+      flags: {
+        agreement_sent: false,
+        agreement_signed: false,
+        qc_checklist_done: false,
+        resume_approved: false,
+        candidate_resume_approved: false,
+        marketing_email_created: false,
+        two_step_verification: false,
+        linkedin_optimized: false,
+        marketing_started: false
+      },
+      not_interested_at: null,
+      deleted_at: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    try {
+      await saveCandidate(newCandidate, user?.id || null);
+      await refreshData();
+      seedQCChecklist(id);
+      logActivity(id, 'Candidate created', `Candidate ${formData.full_name} added to the system.`, user?.id || null);
+      
+      if (formData.assigned_sales) {
+        addNotification({
+          recipient_id: formData.assigned_sales,
+          sender_id: user?.id || null,
+          type: 'system_alert',
+          message: `You have been assigned to a new candidate: ${formData.full_name}`
+        });
       }
 
-      const id = `temp_${generateId()}`;
-      const newCandidate: Candidate = {
-        id,
-        full_name: formData.full_name,
-        phone: formData.phone,
-        whatsapp: formData.whatsapp || formData.phone,
-        email: formData.email,
-        job_interest: formData.job_interest,
-        domain_interested: formData.domain_interested,
-        location: formData.location,
-        education: formData.education,
-        degree: extraData.degree,
-        university: extraData.university,
-        graduation_year: extraData.graduation_year,
-        experience_years: extraData.experience_years,
-        current_company: 'N/A',
-        current_designation: extraData.current_designation,
-        skills: extraData.skills,
-        linkedin_url: extraData.linkedin_url,
-        lead_source: formData.lead_source,
-        lead_generated_by: user?.id || null,
-        assigned_sales: formData.assigned_sales || null,
-        assigned_cs: null,
-        assigned_resume: null,
-        assigned_marketing_leader: null,
-        assigned_recruiter: null,
-        assigned_marketing: null,
-        package_name: '',
-        package_amount: 0,
-        domain_suggested: '',
-        notes: formData.notes,
-        current_stage: 'lead_generation',
-        resume_url: resumeData.url,
-        resume_base64: resumeData.base64,
-        resume_filename: resumeData.filename,
-        flags: {
-          agreement_sent: false,
-          agreement_signed: false,
-          qc_checklist_done: false,
-          resume_approved: false,
-          candidate_resume_approved: false,
-          marketing_email_created: false,
-          two_step_verification: false,
-          linkedin_optimized: false,
-          marketing_started: false
-        },
-        not_interested_at: null,
-        deleted_at: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      };
-
-      console.log('Diagnostic: Attempting to save candidate payload:', newCandidate);
-      const savedCandidate = await saveCandidate(newCandidate, user?.id || null);
-      console.log('Diagnostic: Save response:', savedCandidate);
-      
-      const realId = savedCandidate.id || id;
-      
-      await refreshData();
-      
-      try {
-        seedQCChecklist(realId);
-        logActivity(realId, 'Candidate created', `Candidate ${formData.full_name} added to the system.`, user?.id || null);
-        
-        if (formData.assigned_sales) {
-          addNotification({
-            recipient_id: formData.assigned_sales,
-            sender_id: user?.id || null,
-            type: 'system_alert',
-            message: `You have been assigned to a new candidate: ${formData.full_name}`
-          });
-        }
-
-        if (formData.schedule_call_date && formData.schedule_call_time) {
-          const timezoneStr = formData.schedule_call_timezone || 'EST (Eastern Time)';
-          const t12 = new Date(`1970-01-01T${formData.schedule_call_time}:00`).toLocaleTimeString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true });
-          addFollowUp({
-            candidate_id: realId,
-            stage: 'lead_generation',
-            followup_date: formData.schedule_call_date,
-            note: `Initial Call Scheduled at ${t12} ${timezoneStr}`,
-            done: false,
-            created_by: user?.id || null,
-          });
-          logActivity(realId, 'Follow-up scheduled', `Scheduled initial call for ${formData.schedule_call_date} at ${t12} ${timezoneStr}`, user?.id || null);
-        }
-      } catch (e) {
-        console.warn('Post-creation tasks partially failed:', e);
+      if (formData.schedule_call_date && formData.schedule_call_time) {
+        const timezoneStr = formData.schedule_call_timezone || 'EST (Eastern Time)';
+        const t12 = new Date(`1970-01-01T${formData.schedule_call_time}:00`).toLocaleTimeString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true });
+        addFollowUp({
+          candidate_id: id,
+          stage: 'lead_generation',
+          followup_date: formData.schedule_call_date,
+          note: `Initial Call Scheduled at ${t12} ${timezoneStr}`,
+          done: false,
+          created_by: user?.id || null,
+        });
+        logActivity(id, 'Follow-up scheduled', `Scheduled initial call for ${formData.schedule_call_date} at ${t12} ${timezoneStr}`, user?.id || null);
       }
 
       showToast('Candidate added successfully', 'success');
       onSuccess();
       onClose();
-      // ... (rest of cleanup)
       setFormData({
         full_name: '',
         phone: '',
@@ -355,11 +335,9 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
           </button>
           <button 
             onClick={handleSubmit}
-            disabled={isSaving}
-            className="px-6 py-2 bg-accent-blue text-white font-bold rounded-xl hover:bg-accent-blue/90 transition-all shadow-lg shadow-accent-blue/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            className="px-6 py-2 bg-accent-blue text-white font-bold rounded-xl hover:bg-accent-blue/90 transition-all shadow-lg shadow-accent-blue/20"
           >
-            {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
-            {isSaving ? 'Saving...' : 'Save Candidate'}
+            Save Candidate
           </button>
         </>
       ) : null}
