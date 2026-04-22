@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 import { saveCandidate, logActivity } from '../services/storage';
@@ -10,6 +11,7 @@ import { Candidate, Stage } from '../types';
 
 export const Pipeline: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { candidates: allCandidates, isLoading } = useData();
   const candidates = useMemo(() => allCandidates.filter(c => c.current_stage !== 'not_interested'), [allCandidates]);
   const [search, setSearch] = useState('');
@@ -91,7 +93,7 @@ export const Pipeline: React.FC = () => {
                         animate={{ scale: 1, opacity: 1 }}
                         exit={{ scale: 0.9, opacity: 0 }}
                         className="bg-bg-secondary p-4 rounded-2xl border border-border-primary shadow-sm hover:shadow-md hover:border-accent-blue transition-all group cursor-pointer relative"
-                        onClick={() => window.location.hash = `#candidate?id=${candidate.id}`}
+                        onClick={() => navigate(`/candidate/${candidate.id}`)}
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div className="truncate pr-6">

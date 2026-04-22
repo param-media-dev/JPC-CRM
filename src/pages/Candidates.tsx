@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 import { STAGES } from '../constants';
@@ -14,6 +15,7 @@ export const Candidates: React.FC = () => {
   const { user } = useAuth();
   const { candidates: allCandidates, applications, isLoading } = useData();
   const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [searchParams] = useSearchParams();
   
   const candidates = useMemo(() => allCandidates.filter(c => c.current_stage !== 'not_interested'), [allCandidates]);
   const [search, setSearch] = useState('');
@@ -29,10 +31,9 @@ export const Candidates: React.FC = () => {
 
   // Get stage from URL if present
   useEffect(() => {
-    const params = new URLSearchParams(window.location.hash.split('?')[1]);
-    const stage = params.get('stage');
+    const stage = searchParams.get('stage');
     if (stage) setStageFilter(stage);
-  }, []);
+  }, [searchParams]);
 
   const filteredCandidates = useMemo(() => {
     return candidates.filter(c => {

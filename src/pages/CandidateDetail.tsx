@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { 
   saveCandidate, 
   logActivity, 
@@ -66,9 +67,21 @@ import { Candidate, Payment, Promise as PromiseType, QCChecklistItem, FollowUp, 
 export const CandidateDetail: React.FC = () => {
   const { user, isAuthReady } = useAuth();
   const { showToast } = useToast();
-  
-  const params = new URLSearchParams(window.location.hash.split('?')[1]);
-  const id = params.get('id');
+  const navigate = useNavigate();
+  const { id: routeId } = useParams<{ id: string }>();
+  const [id, setId] = useState<string | undefined>(routeId);
+
+  useEffect(() => {
+    if (!id) {
+      const hashParams = new URLSearchParams(window.location.hash.split('?')[1]);
+      const hashId = hashParams.get('id');
+      if (hashId) {
+        setId(hashId);
+        // Clean up hash and navigate to proper URL
+        navigate(`/candidate/${hashId}`, { replace: true });
+      }
+    }
+  }, [id, navigate, routeId]);
 
   const isCandidate = user?.role === 'candidate' || user?.role === 'jpc_candidate';
   const isLeadGen = user?.role === 'jpc_lead_gen';
@@ -98,37 +111,42 @@ export const CandidateDetail: React.FC = () => {
     setIsLoading(true);
     try {
       const [
-        candData,
-        paymentsData,
-        checklistData,
-        followUpsData,
-        activityLogsData,
-        appsData,
-        interviewsData,
-        usersData
+        candResp,
+        paymentsResp,
+        checklistResp,
+        followUpsResp,
+        activityLogsResp,
+        appsResp,
+        interviewsResp,
+        usersResp
       ] = await Promise.all([
         apiService.getCandidate(id),
         apiService.getPayments({ candidate_id: id }),
-        // Checklists are often handled by candidate state or specific endpoint
         Promise.resolve([]), 
         apiService.getFollowups({ candidate_id: id }),
-        // Activity logs often handled by specific endpoint
         Promise.resolve([]),
         apiService.getApplications({ candidate_id: id }),
         apiService.getInterviews({ candidate_id: id }),
         apiService.getUsers()
       ]);
 
-      if (candData) {
+      const candData = (candResp as any)?.data || candResp;
+      const paymentsData = (paymentsResp as any)?.data || paymentsResp;
+      const followUpsData = (followUpsResp as any)?.data || followUpsResp;
+      const appsData = (appsResp as any)?.data || appsResp;
+      const interviewsData = (interviewsResp as any)?.data || interviewsResp;
+      const usersData = (usersResp as any)?.data || usersResp;
+
+      if (candData && candData.id) {
         // Role-based access check
         if (user?.role === 'jpc_recruiter' && String(candData.assigned_recruiter) !== String(user.id)) {
           showToast('Access denied. This candidate is not assigned to you.', 'error');
-          window.location.hash = '#candidates';
+          navigate('/candidates');
           return;
         }
         if (user?.role === 'jpc_lead_gen' && String(candData.lead_generated_by) !== String(user.id)) {
           showToast('Access denied. You did not generate this lead.', 'error');
-          window.location.hash = '#candidates';
+          navigate('/candidates');
           return;
         }
 
@@ -154,12 +172,12 @@ export const CandidateDetail: React.FC = () => {
     // Security: Candidates can only see their own profile
     if ((user?.role === 'candidate' || user?.role === 'jpc_candidate') && user.candidate_id !== id) {
       showToast('Access denied. Redirecting to your profile.', 'error');
-      window.location.hash = `#candidate?id=${user.candidate_id}`;
+      navigate(`/candidate/${user.candidate_id}`);
       return;
     }
 
     fetchAllData();
-  }, [isAuthReady, id, user, fetchAllData]);
+  }, [isAuthReady, id, user, fetchAllData, navigate, showToast]);
 
   const salesUsers = allUsers.filter(u => 
     u.role === 'jpc_sales' || 
@@ -326,7 +344,7 @@ export const CandidateDetail: React.FC = () => {
         <div className="text-center">
           <AlertCircle className="w-12 h-12 text-text-muted mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-text-primary">Candidate Not Found</h2>
-          <a href="#candidates" className="text-accent-blue hover:underline mt-2 block">Back to Candidates</a>
+          <Link to="/candidates" className="text-accent-blue hover:underline mt-2 block">Back to Candidates</Link>
         </div>
       </div>
     );
@@ -378,10 +396,13 @@ export const CandidateDetail: React.FC = () => {
     const oldNotes = candidate.notes;
     const newNotes = personalForm.notes;
     
-    await saveCandidate({ ...candidate, ...personalForm } as Candidate, user?.id || null);
-    window.location.reload();
+    const updatedCandidate = await saveCandidate({ ...candidate, ...personalForm } as Candidate, user?.id || null);
+    if (updatedCandidate) {
+      setCandidate(updatedCandidate);
+    }
     
     if (oldNotes !== newNotes) {
+      // ... notifications logic (omitted for brevity in replacement but kept in file)
       const teamMembers = [candidate.assigned_sales, candidate.assigned_cs, candidate.assigned_recruiter].filter(Boolean);
       for (const memberId of teamMembers) {
         await addNotification({
@@ -399,8 +420,8 @@ export const CandidateDetail: React.FC = () => {
   };
 
   const handleSaveEducation = async () => {
-    await saveCandidate({ ...candidate, ...educationForm } as Candidate, user?.id || null);
-    window.location.reload();
+    const updated = await saveCandidate({ ...candidate, ...educationForm } as Candidate, user?.id || null);
+    if (updated) setCandidate(updated);
     
     const teamMembers = [candidate.assigned_sales, candidate.assigned_cs, candidate.assigned_recruiter].filter(Boolean);
     for (const memberId of teamMembers) {
@@ -418,8 +439,8 @@ export const CandidateDetail: React.FC = () => {
   };
 
   const handleSavePackage = async () => {
-    await saveCandidate({ ...candidate, ...packageForm } as Candidate, user?.id || null);
-    window.location.reload();
+    const updated = await saveCandidate({ ...candidate, ...packageForm } as Candidate, user?.id || null);
+    if (updated) setCandidate(updated);
     
     // Check for assignments
     const assignmentFields = ['assigned_cs', 'assigned_resume', 'assigned_marketing_leader', 'assigned_recruiter', 'assigned_marketing', 'assigned_sales'];
@@ -440,8 +461,8 @@ export const CandidateDetail: React.FC = () => {
   };
 
   const handleSaveRemarks = async () => {
-    await saveCandidate({ ...candidate, remarks: remarksForm } as Candidate, user?.id || null);
-    window.location.reload();
+    const updatedCandidate = await saveCandidate({ ...candidate, remarks: remarksForm } as Candidate, user?.id || null);
+    if (updatedCandidate) setCandidate(updatedCandidate);
     await logActivity(candidate.id, 'Updated remarks', 'Candidate remarks were updated.', user?.id || null);
     setIsEditingRemarks(false);
     showToast('Remarks updated', 'success');
@@ -554,7 +575,7 @@ export const CandidateDetail: React.FC = () => {
     await saveCandidate(updated, user?.id || null);
     await logActivity(candidate.id, 'Stage moved', `Moved from ${oldStageLabel} to ${newStageLabel}`, user?.id || null);
     showToast(`Moved to ${newStageLabel}`, 'success');
-    window.location.reload();
+    fetchAllData();
   };
 
   const handleToggleFlag = async (flag: keyof Candidate['flags']) => {
@@ -611,9 +632,9 @@ export const CandidateDetail: React.FC = () => {
 
   const handleMarkPaid = async (payment: Payment) => {
     await updatePayment({ ...payment, status: 'paid', paid_on: now() });
-    window.location.reload();
     await logActivity(candidate.id, 'Payment received', `Part ${payment.part_number} (₹${payment.amount}) marked as paid.`, user?.id || null);
     showToast('Payment marked as paid', 'success');
+    fetchAllData();
   };
 
   const handleAddPromise = async () => {
@@ -625,10 +646,10 @@ export const CandidateDetail: React.FC = () => {
       stage: candidate.current_stage,
       status: 'active'
     });
-    window.location.reload();
     await logActivity(candidate.id, 'Promise made', `New promise: ${promiseText}`, user?.id || null);
     setPromiseText('');
     showToast('Promise added', 'success');
+    fetchAllData();
   };
 
   const handleAddFollowUp = async () => {
@@ -712,9 +733,9 @@ export const CandidateDetail: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="flex items-center gap-4">
-          <a href="#candidates" className="p-2 bg-bg-secondary border border-border-primary rounded-xl text-text-secondary hover:text-text-primary transition-all">
+          <Link to="/candidates" className="p-2 bg-bg-secondary border border-border-primary rounded-xl text-text-secondary hover:text-text-primary transition-all">
             <ArrowLeft className="w-5 h-5" />
-          </a>
+          </Link>
           <div>
             <h1 className="text-3xl font-bold text-text-primary">{candidate.full_name}</h1>
             <div className="flex items-center gap-3 mt-1">
@@ -736,7 +757,7 @@ export const CandidateDetail: React.FC = () => {
                   try {
                     await deleteCandidate(candidate.id);
                     showToast('Candidate completely deleted', 'success');
-                    window.location.hash = '#candidates';
+                    navigate('/candidates');
                   } catch (err) {
                     showToast('Error deleting candidate', 'error');
                   }
@@ -1363,13 +1384,13 @@ export const CandidateDetail: React.FC = () => {
                           <>
                             <span className="text-[10px] px-2 py-1 bg-accent-green/10 text-accent-green font-bold rounded-full uppercase">Paid</span>
                             <div className="flex items-center gap-2">
-                              <a 
-                                href={`#receipt?pay_id=${p.id}&cand_id=${candidate.id}`}
+                              <Link 
+                                to={`/receipt?pay_id=${p.id}&cand_id=${candidate.id}`}
                                 className="p-2 text-text-secondary hover:text-accent-blue hover:bg-accent-blue/10 rounded-lg transition-all"
                                 title="View Receipt"
                               >
                                 <FileText className="w-4 h-4" />
-                              </a>
+                              </Link>
                               {p.proof_url || p.proof_base64 ? (
                                 <a 
                                   href={p.proof_url || p.proof_base64 || '#'}
@@ -1767,7 +1788,7 @@ export const CandidateDetail: React.FC = () => {
                 <Video className="w-5 h-5 text-accent-red" />
                 Interview History
               </h3>
-              <a href="#interviews" className="text-xs font-bold text-accent-blue hover:underline">View All</a>
+              <Link to="/interviews" className="text-xs font-bold text-accent-blue hover:underline">View All</Link>
             </div>
             <div className="p-6 space-y-4">
               {interviews.length > 0 ? (
@@ -1812,7 +1833,7 @@ export const CandidateDetail: React.FC = () => {
                 <TrendingUp className="w-5 h-5 text-accent-blue" />
                 Application Performance
               </h3>
-              <a href="#app-tracker" className="text-xs font-bold text-accent-blue hover:underline">Tracker</a>
+              <Link to="/app-tracker" className="text-xs font-bold text-accent-blue hover:underline">Tracker</Link>
             </div>
             <div className="p-6">
               <div className="grid grid-cols-2 gap-4">

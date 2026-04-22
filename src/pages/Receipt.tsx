@@ -2,14 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { getCandidateById, getUserById, subscribeToCollection } from '../services/storage';
 import { Payment, Candidate, User } from '../types';
 import { Printer, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { apiService } from '../services/apiService';
 
 export const Receipt: React.FC = () => {
   const { isAuthReady } = useAuth();
-  const params = new URLSearchParams(window.location.hash.split('?')[1]);
-  const payId = params.get('pay_id');
-  const candId = params.get('cand_id');
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  
+  const payId = searchParams.get('pay_id') || new URLSearchParams(window.location.hash.split('?')[1]).get('pay_id');
+  const candId = searchParams.get('cand_id') || new URLSearchParams(window.location.hash.split('?')[1]).get('cand_id');
 
   const [payment, setPayment] = useState<Payment | null>(null);
   const [candidate, setCandidate] = useState<Candidate | null>(null);
@@ -59,7 +62,7 @@ export const Receipt: React.FC = () => {
       <div className="h-screen flex items-center justify-center bg-bg-primary">
         <div className="text-center">
           <p className="text-text-secondary">Receipt not found.</p>
-          <a href="#dashboard" className="text-accent-blue hover:underline mt-4 block">Back to Dashboard</a>
+          <Link to="/dashboard" className="text-accent-blue hover:underline mt-4 block">Back to Dashboard</Link>
         </div>
       </div>
     );
@@ -69,13 +72,13 @@ export const Receipt: React.FC = () => {
     <div className="min-h-screen bg-bg-primary p-4 md:p-8">
       <div className="max-w-3xl mx-auto space-y-6">
         <div className="flex items-center justify-between no-print">
-          <a 
-            href={`#candidate?id=${candidate.id}`}
+          <button 
+            onClick={() => navigate(`/candidate/${candidate.id}`)}
             className="flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors font-bold"
           >
             <ArrowLeft className="w-5 h-5" />
             Back to Candidate
-          </a>
+          </button>
           <button 
             onClick={() => window.print()}
             className="flex items-center gap-2 px-6 py-2 bg-accent-blue text-white font-bold rounded-xl hover:bg-accent-blue/90 transition-all shadow-lg shadow-accent-blue/20"

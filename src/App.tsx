@@ -68,32 +68,6 @@ const AppContent: React.FC = () => {
     return <LoginPage />;
   }
 
-  const renderPage = () => {
-    const path = location.pathname;
-    
-    if (user?.role === 'candidate' || user?.role === 'jpc_candidate') {
-      if (path.startsWith('/candidate')) return <CandidateDetail />;
-      if (path === '/receipt') return <Receipt />;
-      return <CandidateDashboard />;
-    }
-
-    switch (path) {
-      case '/dashboard': return <Dashboard />;
-      case '/pipeline': return <Pipeline />;
-      case '/candidates': return <Candidates />;
-      case '/followups': return <FollowUps />;
-      case '/not-interested': return <NotInterested />;
-      case '/team': return <Team />;
-      case '/receipt': return <Receipt />;
-      case '/applications': return <AppTracker />;
-      case '/resume-log': return <ResumeLogBook />;
-      case '/interviews': return <InterviewSupport />;
-      default: 
-        if (path.startsWith('/candidate')) return <CandidateDetail />;
-        return <Dashboard />;
-    }
-  };
-
   const isReceiptPage = location.pathname.startsWith('/receipt');
 
   return (
@@ -137,7 +111,21 @@ const AppContent: React.FC = () => {
         )}
 
         <div className={`p-6 md:p-10 max-w-7xl mx-auto w-full flex-1 ${isReceiptPage ? 'p-0 md:p-0 max-w-none' : ''}`}>
-          {renderPage()}
+          <Routes>
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/pipeline" element={<Pipeline />} />
+            <Route path="/candidates" element={<Candidates />} />
+            <Route path="/candidate/:id" element={<CandidateDetail />} />
+            <Route path="/followups" element={<FollowUps />} />
+            <Route path="/not-interested" element={<NotInterested />} />
+            <Route path="/team" element={<Team />} />
+            <Route path="/receipt" element={<Receipt />} />
+            <Route path="/applications" element={<AppTracker />} />
+            <Route path="/resume-log" element={<ResumeLogBook />} />
+            <Route path="/interviews" element={<InterviewSupport />} />
+            <Route path="/" element={<Dashboard />} />
+            <Route path="*" element={<Dashboard />} />
+          </Routes>
         </div>
       </main>
 
@@ -146,7 +134,7 @@ const AppContent: React.FC = () => {
         isOpen={isAddModalOpen} 
         onClose={() => setIsAddModalOpen(false)}
         onSuccess={() => {
-          window.location.reload();
+          // No reload needed, state should refresh
         }}
       />
     </div>

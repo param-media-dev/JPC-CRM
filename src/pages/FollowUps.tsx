@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 import { updateFollowUp, logActivity } from '../services/storage';
@@ -10,6 +11,7 @@ import { FollowUp, Candidate, Stage } from '../types';
 
 export const FollowUps: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { followUps, candidates, isLoading } = useData();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'pending' | 'done'>('pending');
@@ -124,7 +126,7 @@ export const FollowUps: React.FC = () => {
 
                 <div className="flex-1 space-y-4">
                   <div 
-                    onClick={() => window.location.hash = `#candidate?id=${candidate?.id}`}
+                    onClick={() => navigate(`/candidate/${candidate?.id}`)}
                     className="cursor-pointer"
                   >
                     <h3 className="font-bold text-text-primary group-hover:text-accent-blue transition-colors">{candidate?.full_name || 'Unknown Candidate'}</h3>
@@ -154,12 +156,12 @@ export const FollowUps: React.FC = () => {
                       <span className="text-xs font-bold uppercase">Mark Done</span>
                     </button>
                   )}
-                  <a 
-                    href={`#candidate?id=${candidate?.id}`}
+                  <Link 
+                    to={`/candidate/${candidate?.id}`}
                     className="p-2 bg-bg-tertiary rounded-xl text-text-muted hover:text-accent-blue transition-all"
                   >
                     <ArrowRight className="w-4 h-4" />
-                  </a>
+                  </Link>
                 </div>
               </motion.div>
             );

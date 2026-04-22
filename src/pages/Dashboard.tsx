@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 import { markNotificationAsRead } from '../services/storage';
@@ -11,6 +12,7 @@ import { CandidateSheet } from '../components/CandidateSheet';
 
 export const Dashboard: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { 
     candidates, 
     followUps, 
@@ -351,9 +353,9 @@ export const Dashboard: React.FC = () => {
                 return true;
               }).length;
               return (
-                <motion.a
+                <Link
                   key={key}
-                  href={`#pipeline?stage=${key}`}
+                  to={`/pipeline?stage=${key}`}
                   initial={{ x: -20, opacity: 0 }}
                   animate={{ x: 0, opacity: 1 }}
                   transition={{ delay: i * 0.05 }}
@@ -369,7 +371,7 @@ export const Dashboard: React.FC = () => {
                     </div>
                   </div>
                   <ChevronRight className="w-5 h-5 text-text-muted group-hover:text-accent-blue transition-colors" />
-                </motion.a>
+                </Link>
               );
             })}
           </div>
@@ -416,9 +418,9 @@ export const Dashboard: React.FC = () => {
                   {activeInterviews.slice(0, 3).map(int => {
                     const candidate = candidates.find(c => c.id === int.candidate_id);
                     return (
-                      <a 
+                      <Link 
                         key={int.id} 
-                        href="#interviews"
+                        to="/interviews"
                         className="p-4 flex items-center gap-4 hover:bg-bg-tertiary transition-colors group"
                       >
                         <div className={cn(
@@ -436,14 +438,14 @@ export const Dashboard: React.FC = () => {
                           </div>
                         </div>
                         <ChevronRight className="w-4 h-4 text-text-muted" />
-                      </a>
+                      </Link>
                     );
                   })}
                 </div>
                 <div className="p-3 bg-bg-tertiary/50 border-t border-border-primary">
-                  <a href="#interviews" className="text-[10px] font-bold text-accent-blue hover:underline flex items-center justify-center gap-1 uppercase tracking-wider">
+                  <Link to="/interviews" className="text-[10px] font-bold text-accent-blue hover:underline flex items-center justify-center gap-1 uppercase tracking-wider">
                     View All Interviews <ArrowRight className="w-3 h-3" />
-                  </a>
+                  </Link>
                 </div>
               </div>
             </div>
@@ -463,9 +465,9 @@ export const Dashboard: React.FC = () => {
               <div className="bg-bg-secondary rounded-3xl border border-border-primary overflow-hidden shadow-sm">
                 <div className="divide-y divide-border-primary">
                   {pendingResumeRequests.slice(0, 3).map(req => (
-                    <a 
+                    <Link 
                       key={req.id} 
-                      href="#resume-log"
+                      to="/resume-log"
                       className="p-4 flex items-center gap-4 hover:bg-bg-tertiary transition-colors group"
                     >
                       <div className="w-10 h-10 rounded-xl bg-accent-blue/10 flex items-center justify-center text-accent-blue">
@@ -476,13 +478,13 @@ export const Dashboard: React.FC = () => {
                         <p className="text-xs text-text-muted truncate">{req.details}</p>
                       </div>
                       <ChevronRight className="w-4 h-4 text-text-muted" />
-                    </a>
+                    </Link>
                   ))}
                 </div>
                 <div className="p-3 bg-bg-tertiary/50 border-t border-border-primary">
-                  <a href="#resume-log" className="text-[10px] font-bold text-accent-blue hover:underline flex items-center justify-center gap-1 uppercase tracking-wider">
+                  <Link to="/resume-log" className="text-[10px] font-bold text-accent-blue hover:underline flex items-center justify-center gap-1 uppercase tracking-wider">
                     View All Requests <ArrowRight className="w-3 h-3" />
-                  </a>
+                  </Link>
                 </div>
               </div>
             </div>
@@ -523,9 +525,9 @@ export const Dashboard: React.FC = () => {
               )}
             </div>
             <div className="p-4 bg-bg-tertiary/50 border-t border-border-primary">
-              <a href="#candidates" className="text-xs font-bold text-accent-blue hover:underline flex items-center justify-center gap-2">
+              <Link to="/candidates" className="text-xs font-bold text-accent-blue hover:underline flex items-center justify-center gap-2">
                 View All Candidates <ArrowRight className="w-3 h-3" />
-              </a>
+              </Link>
             </div>
           </div>
         </div>

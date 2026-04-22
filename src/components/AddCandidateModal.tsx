@@ -240,10 +240,12 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
     };
 
     try {
-      await saveCandidate(newCandidate, user?.id || null);
+      const savedCandidate = await saveCandidate(newCandidate, user?.id || null);
+      const finalId = savedCandidate?.id || id;
+      
       await refreshData();
-      seedQCChecklist(id);
-      logActivity(id, 'Candidate created', `Candidate ${formData.full_name} added to the system.`, user?.id || null);
+      seedQCChecklist(finalId);
+      logActivity(finalId, 'Candidate created', `Candidate ${formData.full_name} added to the system.`, user?.id || null);
       
       if (formData.assigned_sales) {
         addNotification({
@@ -258,14 +260,14 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
         const timezoneStr = formData.schedule_call_timezone || 'EST (Eastern Time)';
         const t12 = new Date(`1970-01-01T${formData.schedule_call_time}:00`).toLocaleTimeString('en-US', { hour: 'numeric', minute: 'numeric', hour12: true });
         addFollowUp({
-          candidate_id: id,
+          candidate_id: finalId,
           stage: 'lead_generation',
           followup_date: formData.schedule_call_date,
           note: `Initial Call Scheduled at ${t12} ${timezoneStr}`,
           done: false,
           created_by: user?.id || null,
         });
-        logActivity(id, 'Follow-up scheduled', `Scheduled initial call for ${formData.schedule_call_date} at ${t12} ${timezoneStr}`, user?.id || null);
+        logActivity(finalId, 'Follow-up scheduled', `Scheduled initial call for ${formData.schedule_call_date} at ${t12} ${timezoneStr}`, user?.id || null);
       }
 
       showToast('Candidate added successfully', 'success');

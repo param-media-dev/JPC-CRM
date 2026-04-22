@@ -72,27 +72,32 @@ export const checkDuplicateCandidate = async (phone: string, email: string, what
   return null; 
 };
 
-export const saveCandidate = async (candidate: Candidate, userId: string | null) => {
+export const saveCandidate = async (candidate: Candidate, userId: string | null): Promise<Candidate | null> => {
   try {
-    if (candidate.id && !candidate.id.includes('temp')) {
+    // If it has a temporary ID, always create
+    const isNew = !candidate.id || candidate.id.startsWith('temp_') || candidate.id.length < 15;
+    
+    if (!isNew) {
       try {
-        await apiService.updateCandidate(candidate.id, candidate);
+        const response = await apiService.updateCandidate(candidate.id, candidate);
+        return response;
       } catch (error: any) {
         if (error.message && (error.message.includes('Not found') || error.message.includes('404'))) {
-          console.warn(`Candidate ${candidate.id} not found, attempting to create instead.`);
-          const { id, ...candidateData } = candidate;
-          await apiService.createCandidate(candidateData);
+          // Fall through to create if not found
+          console.warn(`Candidate ${candidate.id} not found on server, attempting to create.`);
         } else {
           throw error;
         }
       }
-    } else {
-      const { id, ...candidateData } = candidate;
-      await apiService.createCandidate(candidateData);
     }
+
+    // Create new candidate
+    const { id, ...candidateData } = candidate;
+    const response = await apiService.createCandidate(candidateData);
+    return response;
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `candidates/${candidate.id}`);
-    throw error; // Re-throw to inform caller
+    throw error;
   }
 };
 
@@ -211,5 +216,5 @@ export const updateInterviewRequest = async (id: string, updates: Partial<Interv
   }
 };
 
-export const generateId = () => Math.random().toString(36).slice(2, 11);
+export const generateId = () => `temp_${Math.random().toString(36).slice(2, 11)}`;
 export const now = () => new Date().toISOString();

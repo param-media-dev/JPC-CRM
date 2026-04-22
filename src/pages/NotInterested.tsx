@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 import { subscribeToCollection, saveCandidate, logActivity } from '../services/storage';
@@ -10,6 +11,7 @@ import { Candidate, Stage } from '../types';
 
 export const NotInterested: React.FC = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { candidates: allCandidates, isLoading } = useData();
   const [search, setSearch] = useState('');
 
@@ -140,7 +142,7 @@ export const NotInterested: React.FC = () => {
                     </button>
                   )}
                   <button 
-                    onClick={() => window.location.hash = `#candidate?id=${candidate.id}`}
+                    onClick={() => navigate(`/candidate/${candidate.id}`)}
                     className="p-2 bg-bg-tertiary rounded-xl text-text-muted hover:text-accent-blue transition-all"
                   >
                     <AlertCircle className="w-4 h-4" />
