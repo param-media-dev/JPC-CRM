@@ -150,15 +150,15 @@ const AppContent: React.FC = () => {
               </div>
             </div>
             
-            <div className="flex items-center gap-4 ml-auto">
+            <div className="flex items-center gap-2 sm:gap-4 ml-auto">
               <NotificationList />
               {user?.role !== 'candidate' && (
                 <button 
                   onClick={() => setIsAddModalOpen(true)}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-accent-blue text-white font-bold rounded-xl hover:bg-accent-blue/90 hover:-translate-y-0.5 transition-all shadow-[0_4px_12px_rgba(0,173,140,0.3)] ring-1 ring-white/10"
+                  className="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2.5 bg-accent-blue text-white font-bold rounded-xl hover:bg-accent-blue/90 hover:-translate-y-0.5 transition-all shadow-[0_4px_12px_rgba(0,173,140,0.3)] ring-1 ring-white/10"
                 >
-                  <Plus className="w-5 h-5" />
-                  <span className="hidden sm:inline">Add Candidate</span>
+                  <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <span className="hidden xs:inline text-xs sm:text-sm">Add New</span>
                 </button>
               )}
             </div>

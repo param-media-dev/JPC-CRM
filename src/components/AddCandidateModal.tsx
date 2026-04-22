@@ -5,6 +5,7 @@ import { getUsers, generateId, saveCandidate, seedQCChecklist, logActivity, addN
 import { uploadFile } from '../services/fileService';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
+import { useData } from '../contexts/DataContext';
 import { Candidate, User } from '../types';
 import { cn } from '../lib/utils';
 import { parseResume } from '../services/aiService';
@@ -19,6 +20,7 @@ interface AddCandidateModalProps {
 
 export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, onClose, onSuccess }) => {
   const { user } = useAuth();
+  const { refreshData } = useData();
   const { showToast } = useToast();
   const [salesUsers, setSalesUsers] = useState<User[]>([]);
   const [isParsing, setIsParsing] = useState(false);
@@ -46,16 +48,14 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
   useEffect(() => {
     if (isOpen) {
       getUsers().then(users => {
-        if (Array.isArray(users)) {
-          // Include Sales, Managers, and Admins in the sales selection
-          setSalesUsers(users.filter(u => 
-            u.role === 'jpc_sales' || 
-            u.role === 'jpc_manager' || 
-            u.role === 'administrator' || 
-            u.role === 'jpc_sysadmin'
-          ));
+        // API response might be { data: User[], ... } or just User[]
+        const userList = Array.isArray(users) ? users : (users as any)?.data;
+
+        if (Array.isArray(userList)) {
+          // Include ONLY Sales users in the sales selection
+          setSalesUsers(userList.filter(u => u.role === 'jpc_sales'));
         } else {
-          console.warn('getUsers() did not return an array:', users);
+          console.warn('getUsers() did not return a valid array or data property:', users);
           setSalesUsers([]);
         }
       });
@@ -240,6 +240,7 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
     };
 
     saveCandidate(newCandidate, user?.id || null);
+    window.location.reload();
     seedQCChecklist(id);
     logActivity(id, 'Candidate created', `Candidate ${formData.full_name} added to the system.`, user?.id || null);
     

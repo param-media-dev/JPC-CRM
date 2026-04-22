@@ -75,9 +75,21 @@ export const checkDuplicateCandidate = async (phone: string, email: string, what
 export const saveCandidate = async (candidate: Candidate, userId: string | null) => {
   try {
     if (candidate.id && !candidate.id.includes('temp')) {
-      await apiService.updateCandidate(candidate.id, candidate);
+      try {
+        await apiService.updateCandidate(candidate.id, candidate);
+      } catch (error: any) {
+        // If the candidate doesn't exist, try creating it instead
+        if (error.message && (error.message.includes('Not found') || error.message.includes('404'))) {
+          console.warn(`Candidate ${candidate.id} not found, attempting to create instead.`);
+          const { id, ...candidateData } = candidate;
+          await apiService.createCandidate(candidateData);
+        } else {
+          throw error;
+        }
+      }
     } else {
-      await apiService.createCandidate(candidate);
+      const { id, ...candidateData } = candidate;
+      await apiService.createCandidate(candidateData);
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, `candidates/${candidate.id}`);

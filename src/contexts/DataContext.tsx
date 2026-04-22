@@ -31,17 +31,16 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!user) return;
     setIsLoading(true);
     try {
-      const [
-        candidatesData, 
-        followUpsData, 
-        interviewsData, 
-        appsData
-      ] = await Promise.all([
+      const results = await Promise.all([
         apiService.getCandidates(),
         apiService.getFollowups({ done: 0 }),
         apiService.getInterviews(),
         apiService.getApplications()
       ]);
+
+      const [candidatesData, followUpsData, interviewsData, appsData] = results.map(r => 
+        Array.isArray(r) ? r : (r as any)?.data
+      );
 
       setCandidates(Array.isArray(candidatesData) ? candidatesData : []);
       setFollowUps(Array.isArray(followUpsData) ? followUpsData : []);
@@ -63,6 +62,10 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => {
     if (isAuthReady && user) {
       refreshData();
+      
+      // Auto-refresh every 60 seconds
+      const interval = setInterval(refreshData, 60000);
+      return () => clearInterval(interval);
     }
   }, [isAuthReady, user, refreshData]);
 

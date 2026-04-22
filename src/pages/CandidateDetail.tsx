@@ -332,7 +332,7 @@ export const CandidateDetail: React.FC = () => {
     );
   }
 
-  const hasPortal = allUsers.some(u => u.candidate_id === candidate.id);
+  const hasPortal = Array.isArray(allUsers) && allUsers.some(u => u.candidate_id === candidate.id);
 
   const generateRandomPassword = () => {
     const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
@@ -379,6 +379,7 @@ export const CandidateDetail: React.FC = () => {
     const newNotes = personalForm.notes;
     
     await saveCandidate({ ...candidate, ...personalForm } as Candidate, user?.id || null);
+    window.location.reload();
     
     if (oldNotes !== newNotes) {
       const teamMembers = [candidate.assigned_sales, candidate.assigned_cs, candidate.assigned_recruiter].filter(Boolean);
@@ -399,6 +400,7 @@ export const CandidateDetail: React.FC = () => {
 
   const handleSaveEducation = async () => {
     await saveCandidate({ ...candidate, ...educationForm } as Candidate, user?.id || null);
+    window.location.reload();
     
     const teamMembers = [candidate.assigned_sales, candidate.assigned_cs, candidate.assigned_recruiter].filter(Boolean);
     for (const memberId of teamMembers) {
@@ -417,6 +419,7 @@ export const CandidateDetail: React.FC = () => {
 
   const handleSavePackage = async () => {
     await saveCandidate({ ...candidate, ...packageForm } as Candidate, user?.id || null);
+    window.location.reload();
     
     // Check for assignments
     const assignmentFields = ['assigned_cs', 'assigned_resume', 'assigned_marketing_leader', 'assigned_recruiter', 'assigned_marketing', 'assigned_sales'];
@@ -438,6 +441,7 @@ export const CandidateDetail: React.FC = () => {
 
   const handleSaveRemarks = async () => {
     await saveCandidate({ ...candidate, remarks: remarksForm } as Candidate, user?.id || null);
+    window.location.reload();
     await logActivity(candidate.id, 'Updated remarks', 'Candidate remarks were updated.', user?.id || null);
     setIsEditingRemarks(false);
     showToast('Remarks updated', 'success');
@@ -456,6 +460,7 @@ export const CandidateDetail: React.FC = () => {
         proof_filename: file.name
       };
       await updatePayment(updated);
+      window.location.reload();
       await logActivity(candidate!.id, 'Payment proof uploaded', `Proof uploaded for Part ${payment.part_number}`, user?.id || null);
       showToast('Payment proof uploaded', 'success');
     } catch (error) {
@@ -547,19 +552,9 @@ export const CandidateDetail: React.FC = () => {
     };
     
     await saveCandidate(updated, user?.id || null);
-    
-    const teamMembers = [candidate.assigned_sales, candidate.assigned_cs, candidate.assigned_recruiter].filter(Boolean);
-    for (const memberId of teamMembers) {
-      await addNotification({
-        recipient_id: memberId as string,
-        sender_id: user?.id || null,
-        type: 'system_alert',
-        message: `Candidate ${candidate.full_name} moved from ${oldStageLabel} to ${newStageLabel}.`
-      });
-    }
-
     await logActivity(candidate.id, 'Stage moved', `Moved from ${oldStageLabel} to ${newStageLabel}`, user?.id || null);
     showToast(`Moved to ${newStageLabel}`, 'success');
+    window.location.reload();
   };
 
   const handleToggleFlag = async (flag: keyof Candidate['flags']) => {
@@ -574,10 +569,12 @@ export const CandidateDetail: React.FC = () => {
   const handleCheckQC = async (item: QCChecklistItem) => {
     await updateQCChecklistItem({ ...item, checked: !item.checked });
     await logActivity(candidate.id, 'QC Item toggled', `QC Item '${item.item_label}' was toggled.`, user?.id || null);
+    window.location.reload();
   };
 
   const handleUpdateQCValue = async (item: QCChecklistItem, value: string) => {
     await updateQCChecklistItem({ ...item, value });
+    window.location.reload();
   };
 
   const handleResetChecklist = async () => {
@@ -614,6 +611,7 @@ export const CandidateDetail: React.FC = () => {
 
   const handleMarkPaid = async (payment: Payment) => {
     await updatePayment({ ...payment, status: 'paid', paid_on: now() });
+    window.location.reload();
     await logActivity(candidate.id, 'Payment received', `Part ${payment.part_number} (₹${payment.amount}) marked as paid.`, user?.id || null);
     showToast('Payment marked as paid', 'success');
   };
@@ -627,6 +625,7 @@ export const CandidateDetail: React.FC = () => {
       stage: candidate.current_stage,
       status: 'active'
     });
+    window.location.reload();
     await logActivity(candidate.id, 'Promise made', `New promise: ${promiseText}`, user?.id || null);
     setPromiseText('');
     showToast('Promise added', 'success');

@@ -1,8 +1,9 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import * as pdfjsLib from 'pdfjs-dist';
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
 // Configure the worker for pdfjs
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 export interface ParsedCandidate {
   full_name: string;
@@ -30,7 +31,14 @@ const extractTextFromPDF = async (base64: string): Promise<string> => {
     for (let i = 0; i < len; i++) {
       bytes[i] = binaryString.charCodeAt(i);
     }
-    const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+    
+    // Use disableRange and disableStream to prevent "readableStream" related errors in older/incompatible environments
+    const pdf = await pdfjsLib.getDocument({ 
+      data: bytes,
+      disableRange: true,
+      disableStream: true
+    }).promise;
+    
     let text = '';
     // Only parse the first 5 pages to save time/tokens if it's super long
     const numPages = Math.min(pdf.numPages, 5); 

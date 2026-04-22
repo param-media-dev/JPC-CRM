@@ -158,7 +158,7 @@ export const Candidates: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      {allUsers.some(u => u.candidate_id === candidate.id) ? (
+                      {Array.isArray(allUsers) && allUsers.some(u => u.candidate_id === candidate.id) ? (
                         <div className="flex items-center gap-1.5 text-accent-green">
                           <ShieldCheck className="w-4 h-4" />
                           <span className="text-[10px] font-bold uppercase">Active</span>
