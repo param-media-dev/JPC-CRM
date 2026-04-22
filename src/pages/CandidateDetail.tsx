@@ -19,7 +19,7 @@ import {
 import { uploadFile } from '../services/fileService';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { STAGES, TRANSITIONS, LEAD_SOURCES } from '../constants';
+import { STAGES, TRANSITIONS, LEAD_SOURCES, ROLE_PERMISSIONS } from '../constants';
 import { 
   ArrowLeft, 
   Edit2, 
@@ -86,6 +86,15 @@ export const CandidateDetail: React.FC = () => {
   const canManageAgreement = user?.role === 'jpc_cs' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager';
 
   const [candidate, setCandidate] = useState<Candidate | null>(null);
+
+  const canMoveStage = (() => {
+    if (!user || !user.role || !candidate) return false;
+    const permissions = ROLE_PERMISSIONS[user.role];
+    if (!permissions) return false;
+    if (permissions.allowedStages === 'ALL') return true;
+    return permissions.allowedStages.includes(candidate.current_stage);
+  })();
+
   const [payments, setPayments] = useState<Payment[]>([]);
   const [promises, setPromises] = useState<PromiseType[]>([]);
   const [checklist, setChecklist] = useState<QCChecklistItem[]>([]);
@@ -879,7 +888,7 @@ export const CandidateDetail: React.FC = () => {
       )}
 
       {/* Stage Move Bar */}
-      {(canEdit || isSalesperson) && (
+      {canMoveStage && (
         <div className="bg-bg-secondary border border-border-primary rounded-2xl p-4 flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <span className="text-xs font-bold text-text-muted uppercase tracking-widest mr-2">Move to Stage:</span>

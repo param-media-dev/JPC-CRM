@@ -77,7 +77,7 @@ export async function parseResume(fileBase64: string, mimeType: string): Promise
     parts.push({ text: "Return the data in JSON format following the provided schema. If a field is not found, return an empty string." });
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.1-flash-preview",
+      model: "gemini-2.5-flash",
       contents: { parts },
       config: {
         responseMimeType: "application/json",
