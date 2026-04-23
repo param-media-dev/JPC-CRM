@@ -36,6 +36,7 @@ export const SLAMonitor: React.FC = () => {
         'sales', 
         'cs_qc', 
         'marketing_leader', 
+        'cs_strategy_check',
         'resume_team',
         'cs_assign_recruiter', 
         'recruiter', 

@@ -35,6 +35,7 @@ export type Stage =
   | 'sales'
   | 'cs_qc'
   | 'marketing_leader'
+  | 'cs_strategy_check'
   | 'resume_team'
   | 'cs_assign_recruiter'
   | 'recruiter'
@@ -55,6 +56,8 @@ export interface CandidateFlags {
   linkedin_optimized: boolean;
   marketing_started: boolean;
   sla_timeout_notified?: boolean;
+  marketing_strategy_done?: boolean;
+  resume_briefing_call_done?: boolean;
 }
 
 export interface Candidate {

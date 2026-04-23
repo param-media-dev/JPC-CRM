@@ -981,7 +981,7 @@ export const CandidateDetail: React.FC = () => {
                 {(canEditResume || isSalesperson) && (
                   <label className="flex items-center gap-2 px-4 py-2 bg-bg-tertiary border border-border-primary text-text-primary font-bold rounded-xl hover:border-accent-purple hover:text-accent-purple transition-all text-xs cursor-pointer">
                     <Upload className="w-4 h-4" />
-                    {candidate.resume_url || candidate.resume_base64 ? 'Update Resume' : 'Upload Resume'}
+                    {candidate.resume_url || candidate.resume_base64 ? 'Upload New Resume' : 'Upload Resume'}
                     <input type="file" className="hidden" accept=".pdf,.doc,.docx" onChange={handleResumeUpload} />
                   </label>
                 )}
@@ -1626,8 +1626,15 @@ export const CandidateDetail: React.FC = () => {
                   ]
                 },
                 {
+                  title: 'Marketing Leader',
+                  flags: [
+                    { key: 'marketing_strategy_done', label: 'Marketing Strategy Done' },
+                  ]
+                },
+                {
                   title: 'Resume Team',
                   flags: [
+                    { key: 'resume_briefing_call_done', label: 'Resume Briefing Call Done' },
                     { key: 'resume_approved', label: 'Team Leader Approved Resume' },
                     { key: 'candidate_resume_approved', label: 'Candidate Approved Resume' },
                   ]
@@ -1680,6 +1687,8 @@ export const CandidateDetail: React.FC = () => {
                 'agreement_sent',
                 'agreement_signed',
                 'qc_checklist_done',
+                'marketing_strategy_done',
+                'resume_briefing_call_done',
                 'resume_approved',
                 'candidate_resume_approved',
                 'marketing_email_created',
