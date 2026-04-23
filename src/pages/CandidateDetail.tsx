@@ -77,7 +77,7 @@ export const CandidateDetail: React.FC = () => {
   const isCandidate = user?.role === 'candidate' || user?.role === 'jpc_candidate';
   const isLeadGen = user?.role === 'jpc_lead_gen';
   const isSalesperson = user?.role === 'jpc_sales';
-  const canEdit = !isCandidate && !isLeadGen && !isSalesperson;
+  const canEdit = !isCandidate && !isLeadGen;
   const canEditResume = !isCandidate && !isSalesperson;
   const canEditPackage = !isCandidate;
   const canManagePayments = !isCandidate && !isLeadGen;

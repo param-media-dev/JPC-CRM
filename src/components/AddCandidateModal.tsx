@@ -88,10 +88,13 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Check file type
-    const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
-    if (!allowedTypes.includes(file.type)) {
-      showToast('Please upload a PDF, DOCX, or Text file', 'error');
+    // Check file type broadly
+    const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword', 'text/plain'];
+    const fileExtension = file.name.split('.').pop()?.toLowerCase();
+    const isAllowedExtension = ['pdf', 'doc', 'docx', 'txt'].includes(fileExtension || '');
+    
+    if (!allowedTypes.includes(file.type) && !isAllowedExtension) {
+      showToast('Please upload a PDF, DOC, DOCX, or Text file', 'error');
       return;
     }
 
@@ -299,7 +302,7 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
               ref={fileInputRef}
               onChange={handleFileUpload}
               className="hidden"
-              accept=".pdf,.docx,.txt"
+              accept=".pdf,.doc,.docx,.txt"
             />
             <button
               onClick={() => fileInputRef.current?.click()}

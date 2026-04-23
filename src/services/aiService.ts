@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import * as pdfjsLib from 'pdfjs-dist';
+import * as mammoth from 'mammoth';
 
 // Configure the worker for pdfjs
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
@@ -47,13 +48,41 @@ const extractTextFromPDF = async (base64: string): Promise<string> => {
   }
 };
 
+const extractTextFromDOCX = async (base64: string): Promise<string> => {
+  try {
+    const binaryString = window.atob(base64);
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    const result = await mammoth.extractRawText({ arrayBuffer: bytes.buffer });
+    return result.value.trim();
+  } catch (error) {
+    console.error("DOCX Extraction error:", error);
+    return "";
+  }
+};
+
+const extractTextFromTXT = (base64: string): string => {
+  try {
+    return window.atob(base64).trim();
+  } catch (error) {
+    console.error("TXT Extraction error:", error);
+    return "";
+  }
+};
+
 export async function parseResume(fileBase64: string, mimeType: string): Promise<ParsedCandidate | null> {
   try {
     let textToParse = "";
 
-    // If it's a PDF, extract text directly to make it incredibly fast
     if (mimeType === 'application/pdf') {
       textToParse = await extractTextFromPDF(fileBase64);
+    } else if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || mimeType === 'application/msword') {
+      textToParse = await extractTextFromDOCX(fileBase64);
+    } else if (mimeType === 'text/plain') {
+      textToParse = extractTextFromTXT(fileBase64);
     }
 
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -64,7 +93,7 @@ export async function parseResume(fileBase64: string, mimeType: string): Promise
     const parts: any[] = [];
     if (textToParse.length > 50) {
       parts.push({ text: `Extract candidate information from this resume text:\n\n${textToParse}` });
-    } else {
+    } else if (mimeType !== 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' && mimeType !== 'application/msword') {
       parts.push({
         inlineData: {
           data: fileBase64,
@@ -72,6 +101,9 @@ export async function parseResume(fileBase64: string, mimeType: string): Promise
         },
       });
       parts.push({ text: "Extract candidate information from this resume document." });
+    } else {
+       // If it's a docx but text parsing failed or is too short, we must return null early because Gemini doesn't support DOCX inline data.
+       return null;
     }
 
     parts.push({ text: "Return the data in JSON format following the provided schema. If a field is not found, return an empty string." });
