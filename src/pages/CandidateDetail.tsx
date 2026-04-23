@@ -787,14 +787,22 @@ export const CandidateDetail: React.FC = () => {
           </a>
           <div>
             <h1 className="text-3xl font-bold text-text-primary">{candidate.full_name}</h1>
-            <div className="flex items-center gap-3 mt-1">
-              <span className="flex items-center gap-1.5 text-sm text-text-secondary">
-                <Phone className="w-4 h-4" /> {candidate.phone}
-              </span>
-              <span className="w-1 h-1 bg-text-muted rounded-full" />
-              <span className="flex items-center gap-1.5 text-sm text-text-secondary">
-                <Mail className="w-4 h-4" /> {candidate.email || 'No email'}
-              </span>
+            <div className="flex flex-col gap-2 mt-1">
+              <div className="flex items-center gap-3">
+                <span className="flex items-center gap-1.5 text-sm text-text-secondary">
+                  <Phone className="w-4 h-4" /> {candidate.phone}
+                </span>
+                <span className="w-1 h-1 bg-text-muted rounded-full" />
+                <span className="flex items-center gap-1.5 text-sm text-text-secondary">
+                  <Mail className="w-4 h-4" /> {candidate.email || 'No email'}
+                </span>
+              </div>
+              {followUps.filter(f => !f.done).sort((a, b) => new Date(a.followup_date).getTime() - new Date(b.followup_date).getTime()).slice(0, 1).map(upcomingCall => (
+                <span key={upcomingCall.id} className="flex items-center gap-1.5 text-sm font-bold text-accent-amber bg-accent-amber/10 px-3 py-1 rounded-lg w-max">
+                  <Calendar className="w-4 h-4" /> 
+                  Upcoming Call: {new Date(upcomingCall.followup_date).toLocaleDateString()} - {upcomingCall.note}
+                </span>
+              ))}
             </div>
           </div>
         </div>

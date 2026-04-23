@@ -66,7 +66,7 @@ export const ROLE_PERMISSIONS: Record<Role, { allowedStages: Stage[] | 'ALL'; ad
 };
 
 export const LEAD_SOURCES = [
-  'Facebook', 'Instagram', 'Google Ads', 'Referral', 'Walk-in', 'WhatsApp', 'LinkedIn', 'Event', 'Other'
+  'Facebook', 'Instagram', 'Google Ads', 'Referral', 'Walk-in', 'WhatsApp', 'LinkedIn', 'Event', 'Self Lead', 'Other'
 ];
 
 export const QC_CHECKLIST_TEMPLATE = [
