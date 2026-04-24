@@ -19,6 +19,7 @@ import { InterviewSupport } from './pages/InterviewSupport';
 import { AddCandidateModal } from './components/AddCandidateModal';
 import { NotificationList } from './components/NotificationList';
 import { SLAMonitor } from './components/SLAMonitor';
+import { MigrationExecutor } from './MigrationExecutor';
 import { seedData } from './services/seeding';
 import { migrateAllChecklists, testConnection } from './services/storage';
 import { Plus, Menu } from 'lucide-react';
@@ -170,6 +171,7 @@ const AppContent: React.FC = () => {
       </main>
 
       <SLAMonitor />
+      <MigrationExecutor />
       <AddCandidateModal 
         isOpen={isAddModalOpen} 
         onClose={() => setIsAddModalOpen(false)}

@@ -2,12 +2,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { subscribeToCollection, subscribeToQuery, markNotificationAsRead } from '../services/storage';
 import { STAGES } from '../constants';
-import { Users, CheckCircle2, Clock, UserX, ArrowRight, LayoutGrid, Phone, Calendar, ArrowUpRight, AlertCircle, ChevronRight, FileEdit, Video, TrendingUp, Check } from 'lucide-react';
+import { Users, CheckCircle2, Clock, UserX, ArrowRight, LayoutGrid, Phone, Calendar, ArrowUpRight, AlertCircle, ChevronRight, FileEdit, Video, TrendingUp, Check, ShieldCheck } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { Candidate, FollowUp, Notification, ResumeChangeRequest, InterviewRequest, Application } from '../types';
 import { CandidateSheet } from '../components/CandidateSheet';
-import { db } from '../firebase';
+import { db, firebaseConfig } from '../firebase';
 import { query, collection, where } from 'firebase/firestore';
 
 export const Dashboard: React.FC = () => {
@@ -571,6 +571,38 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Admin Only: System Diagnosis Options */}
+      {user?.role === 'jpc_sysadmin' && (
+        <div className="bg-[#0f172a] border border-blue-900/50 rounded-3xl p-6 shadow-xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 blur-[100px] rounded-full pointer-events-none" />
+          <div className="flex items-center gap-3 mb-6 relative z-10">
+            <div className="p-2 bg-blue-500/20 rounded-lg text-blue-400">
+              <ShieldCheck className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-white tracking-tight">System Diagnosis</h2>
+              <p className="text-sm text-slate-400">Firebase Configuration & Database Mapping</p>
+            </div>
+          </div>
+          
+          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 font-mono text-xs overflow-x-auto relative z-10">
+            <pre className="text-slate-300">
+              <span className="text-blue-400">const</span> <span className="text-blue-300">firebaseConfig</span> <span className="text-blue-400">=</span> {'{\n'}
+              <span className="text-slate-500">  // Your current active database keys</span>{'\n'}
+              <span className="text-teal-300">  projectId:</span> <span className="text-amber-300">"{firebaseConfig.projectId}"</span>,{'\n'}
+              <span className="text-teal-300">  appId:</span> <span className="text-amber-300">"{firebaseConfig.appId}"</span>,{'\n'}
+              <span className="text-teal-300">  apiKey:</span> <span className="text-amber-300">"{firebaseConfig.apiKey}"</span>,{'\n'}
+              <span className="text-teal-300">  authDomain:</span> <span className="text-amber-300">"{firebaseConfig.authDomain}"</span>,{'\n'}
+              <span className="text-teal-300">  firestoreDatabaseId:</span> <span className="text-amber-300">"{firebaseConfig.firestoreDatabaseId}"</span>,{'\n'}
+              <span className="text-teal-300">  storageBucket:</span> <span className="text-amber-300">"{firebaseConfig.storageBucket}"</span>,{'\n'}
+              <span className="text-teal-300">  messagingSenderId:</span> <span className="text-amber-300">"{firebaseConfig.messagingSenderId}"</span>{'\n'}
+              {'}'};
+            </pre>
+          </div>
+        </div>
+      )}
+
       <CandidateSheet 
         candidate={selectedCandidate}
         isOpen={isSheetOpen}

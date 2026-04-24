@@ -114,7 +114,7 @@ export const Receipt: React.FC = () => {
             <div className="flex flex-col md:flex-row justify-between gap-8">
               <div>
                 <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-1">Amount Paid</p>
-                <h2 className="text-5xl font-bold text-slate-900">₹{payment.amount.toLocaleString()}</h2>
+                <h2 className="text-5xl font-bold text-slate-900">${payment.amount.toLocaleString()}</h2>
               </div>
               <div className="flex gap-4">
                 <div className="text-right">
@@ -141,7 +141,7 @@ export const Receipt: React.FC = () => {
               <div>
                 <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-2">Package Information</p>
                 <p className="text-slate-900 font-bold">{candidate.package_name || '—'}</p>
-                <p className="text-slate-600">Total Package Value: ₹{candidate.package_amount.toLocaleString()}</p>
+                <p className="text-slate-600">Total Package Value: ${candidate.package_amount.toLocaleString()}</p>
               </div>
             </div>
             <div className="space-y-6">

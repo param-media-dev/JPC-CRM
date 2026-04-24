@@ -220,10 +220,10 @@ export const CandidateDashboard: React.FC = () => {
             </div>
             <div>
               <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Total Paid</p>
-              <p className="text-2xl font-bold text-text-primary">₹{payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.amount, 0).toLocaleString()}</p>
+              <p className="text-2xl font-bold text-text-primary">${payments.filter(p => p.status === 'paid').reduce((sum, p) => sum + p.amount, 0).toLocaleString()}</p>
             </div>
           </div>
-          <p className="text-xs text-text-secondary">Out of ₹{candidate.package_amount.toLocaleString()}</p>
+          <p className="text-xs text-text-secondary">Out of ${candidate.package_amount.toLocaleString()}</p>
         </div>
 
         <div className="bg-bg-secondary border border-border-primary rounded-3xl p-6 shadow-sm">
@@ -233,7 +233,7 @@ export const CandidateDashboard: React.FC = () => {
             </div>
             <div>
               <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Pending</p>
-              <p className="text-2xl font-bold text-text-primary">₹{payments.filter(p => p.status === 'pending').reduce((sum, p) => sum + p.amount, 0).toLocaleString()}</p>
+              <p className="text-2xl font-bold text-text-primary">${payments.filter(p => p.status === 'pending').reduce((sum, p) => sum + p.amount, 0).toLocaleString()}</p>
             </div>
           </div>
           <p className="text-xs text-text-secondary">Next payment due soon</p>

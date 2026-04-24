@@ -676,14 +676,14 @@ export const CandidateDetail: React.FC = () => {
       notes: paymentForm.notes,
       created_by: user?.id || null
     });
-    await logActivity(candidate.id, 'Payment plan added', `Added Part ${paymentForm.part_number} for ₹${paymentForm.amount}`, user?.id || null);
+    await logActivity(candidate.id, 'Payment plan added', `Added Part ${paymentForm.part_number} for $${paymentForm.amount}`, user?.id || null);
     showToast('Payment plan added', 'success');
     setPaymentForm({ part_number: payments.length + 2, amount: 0, due_date: '', payment_method: 'Cash', notes: '' });
   };
 
   const handleMarkPaid = async (payment: Payment) => {
     await updatePayment({ ...payment, status: 'paid', paid_on: now() });
-    await logActivity(candidate.id, 'Payment received', `Part ${payment.part_number} (₹${payment.amount}) marked as paid.`, user?.id || null);
+    await logActivity(candidate.id, 'Payment received', `Part ${payment.part_number} ($${payment.amount}) marked as paid.`, user?.id || null);
     showToast('Payment marked as paid', 'success');
   };
 
@@ -901,7 +901,7 @@ export const CandidateDetail: React.FC = () => {
           <div>
             <p className="font-bold text-accent-amber">Next Payment Due</p>
             <p className="text-sm text-accent-amber/80">
-              ₹{nextPayment.amount.toLocaleString()} is due on {new Date(nextPayment.due_date).toLocaleDateString()}
+              ${nextPayment.amount.toLocaleString()} is due on {new Date(nextPayment.due_date).toLocaleDateString()}
             </p>
           </div>
         </div>
@@ -1306,7 +1306,7 @@ export const CandidateDetail: React.FC = () => {
                         <input type="text" value={packageForm.package_name || ''} onChange={e => setPackageForm({...packageForm, package_name: e.target.value})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm" />
                       </div>
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold text-text-muted uppercase">Package Amount (₹)</label>
+                        <label className="text-[10px] font-bold text-text-muted uppercase">Package Amount ($)</label>
                         <input type="number" value={packageForm.package_amount || 0} onChange={e => setPackageForm({...packageForm, package_amount: Number(e.target.value)})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm" />
                       </div>
                     </>
@@ -1383,7 +1383,7 @@ export const CandidateDetail: React.FC = () => {
                       </div>
                       <div className="space-y-1">
                         <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Total Amount</p>
-                        <p className="text-text-primary font-bold text-lg">₹{candidate.package_amount.toLocaleString()}</p>
+                        <p className="text-text-primary font-bold text-lg">${candidate.package_amount.toLocaleString()}</p>
                       </div>
                     </>
                   )}
@@ -1435,7 +1435,7 @@ export const CandidateDetail: React.FC = () => {
                   Payments
                 </h3>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-text-secondary">₹{totalPaid} / ₹{candidate.package_amount}</span>
+                  <span className="text-xs font-bold text-text-secondary">${totalPaid} / ${candidate.package_amount}</span>
                   <div className="w-24 h-1.5 bg-bg-tertiary rounded-full overflow-hidden">
                     <div className="h-full bg-accent-green" style={{ width: `${Math.min(paymentProgress, 100)}%` }} />
                   </div>
@@ -1451,7 +1451,7 @@ export const CandidateDetail: React.FC = () => {
                           #{p.part_number}
                         </div>
                         <div>
-                          <p className="font-bold text-text-primary">₹{p.amount.toLocaleString()}</p>
+                          <p className="font-bold text-text-primary">${p.amount.toLocaleString()}</p>
                           <p className="text-[10px] text-text-muted uppercase font-bold">Due: {new Date(p.due_date).toLocaleDateString()}</p>
                         </div>
                       </div>
