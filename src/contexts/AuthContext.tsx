@@ -57,7 +57,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               id: fUser.uid,
               username: fUser.email?.split('@')[0] || 'user',
               display_name: fUser.displayName || candidateData?.full_name || 'User',
-              role: fUser.email === 'paramatwork3076@gmail.com' ? 'administrator' : (candidateData ? 'candidate' : 'jpc_sales'),
+              role: fUser.email === 'paramatwork3076@gmail.com' ? 'jpc_sysadmin' : (candidateData ? 'candidate' : 'jpc_sales'),
               candidate_id: candidateData?.id || null,
               email: fUser.email || undefined,
               created_at: new Date().toISOString()
@@ -108,7 +108,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         id: fUser.uid,
         username: email.split('@')[0],
         display_name: displayName,
-        role: email === 'paramatwork3076@gmail.com' ? 'administrator' : 'jpc_sales',
+        role: email === 'paramatwork3076@gmail.com' ? 'jpc_sysadmin' : 'jpc_sales',
         email: email,
         created_at: new Date().toISOString()
       };

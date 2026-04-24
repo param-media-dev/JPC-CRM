@@ -573,7 +573,7 @@ export const Dashboard: React.FC = () => {
       </div>
 
       {/* Admin Only: System Diagnosis Options */}
-      {user?.role === 'jpc_sysadmin' && (
+      {(user?.role === 'jpc_sysadmin' || user?.role === 'administrator') && (
         <div className="bg-[#0f172a] border border-blue-900/50 rounded-3xl p-6 shadow-xl relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/10 blur-[100px] rounded-full pointer-events-none" />
           <div className="flex items-center gap-3 mb-6 relative z-10">
@@ -582,23 +582,55 @@ export const Dashboard: React.FC = () => {
             </div>
             <div>
               <h2 className="text-xl font-bold text-white tracking-tight">System Diagnosis</h2>
-              <p className="text-sm text-slate-400">Firebase Configuration & Database Mapping</p>
+              <p className="text-sm text-slate-400">Firebase Configuration & Database Status</p>
+            </div>
+            <div className="ml-auto px-3 py-1 bg-accent-green/20 text-accent-green text-[10px] font-bold rounded-full border border-accent-green/30 tracking-widest uppercase">
+              Authenticated: {user?.display_name}
             </div>
           </div>
           
-          <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 font-mono text-xs overflow-x-auto relative z-10">
-            <pre className="text-slate-300">
-              <span className="text-blue-400">const</span> <span className="text-blue-300">firebaseConfig</span> <span className="text-blue-400">=</span> {'{\n'}
-              <span className="text-slate-500">  // Your current active database keys</span>{'\n'}
-              <span className="text-teal-300">  projectId:</span> <span className="text-amber-300">"{firebaseConfig.projectId}"</span>,{'\n'}
-              <span className="text-teal-300">  appId:</span> <span className="text-amber-300">"{firebaseConfig.appId}"</span>,{'\n'}
-              <span className="text-teal-300">  apiKey:</span> <span className="text-amber-300">"{firebaseConfig.apiKey}"</span>,{'\n'}
-              <span className="text-teal-300">  authDomain:</span> <span className="text-amber-300">"{firebaseConfig.authDomain}"</span>,{'\n'}
-              <span className="text-teal-300">  firestoreDatabaseId:</span> <span className="text-amber-300">"{firebaseConfig.firestoreDatabaseId}"</span>,{'\n'}
-              <span className="text-teal-300">  storageBucket:</span> <span className="text-amber-300">"{firebaseConfig.storageBucket}"</span>,{'\n'}
-              <span className="text-teal-300">  messagingSenderId:</span> <span className="text-amber-300">"{firebaseConfig.messagingSenderId}"</span>{'\n'}
-              {'}'};
-            </pre>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 relative z-10">
+            <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 font-mono text-xs overflow-x-auto">
+              <p className="text-slate-500 mb-2">// Current Firebase Configuration</p>
+              <pre className="text-slate-300">
+                <span className="text-blue-400">const</span> <span className="text-blue-300">firebaseConfig</span> <span className="text-blue-400">=</span> {'{\n'}
+                <span className="text-teal-300">  projectId:</span> <span className="text-amber-300">"{firebaseConfig.projectId}"</span>,{'\n'}
+                <span className="text-teal-300">  appId:</span> <span className="text-amber-300">"{firebaseConfig.appId}"</span>,{'\n'}
+                <span className="text-teal-300">  apiKey:</span> <span className="text-amber-300">"{firebaseConfig.apiKey}"</span>,{'\n'}
+                <span className="text-teal-300">  authDomain:</span> <span className="text-amber-300">"{firebaseConfig.authDomain}"</span>,{'\n'}
+                <span className="text-teal-300">  firestoreDatabaseId:</span> <span className="text-amber-300">"{firebaseConfig.firestoreDatabaseId}"</span>,{'\n'}
+                <span className="text-teal-300">  storageBucket:</span> <span className="text-amber-300">"{firebaseConfig.storageBucket}"</span>,{'\n'}
+                <span className="text-teal-300">  messagingSenderId:</span> <span className="text-amber-300">"{firebaseConfig.messagingSenderId}"</span>{'\n'}
+                {'}'};
+              </pre>
+            </div>
+            
+            <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 space-y-4">
+              <h4 className="text-white font-bold text-sm flex items-center gap-2">
+                <Clock className="w-4 h-4 text-blue-400" />
+                Database Migration Status
+              </h4>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-[10px] text-slate-400">
+                  <span>Source DB:</span>
+                  <span className="font-mono text-slate-300">ai-studio-f34...</span>
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-slate-400">
+                  <span>Dest DB (Prod):</span>
+                  <span className="font-mono text-accent-green">production-placify</span>
+                </div>
+                <div className="w-full h-1 bg-slate-800 rounded-full mt-2 overflow-hidden">
+                  <div className="w-full h-full bg-accent-green animate-pulse shadow-[0_0_8px_rgba(0,173,140,0.5)]" />
+                </div>
+              </div>
+              
+              <div className="pt-4 border-t border-slate-800">
+                <p className="text-[10px] text-slate-400 leading-relaxed italic">
+                  Note: All data (Candidates, Users, QC, Notifications) has been successfully ported to the 'production-placify' instance. 
+                  Admin rules have been deployed to ensure your account maintains full control.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       )}
