@@ -1,0 +1,169 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "System users and recruiters",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "display_name": { "type": "string" },
+        "role": { "type": "string" },
+        "email": { "type": "string" },
+        "auto_booking_enabled": { "type": "boolean" }
+      },
+      "required": ["id", "display_name", "role"]
+    },
+    "Candidate": {
+      "title": "Candidate",
+      "description": "Candidate profile details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "full_name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "current_stage": { "type": "string" }
+      },
+      "required": ["id", "full_name"]
+    },
+    "Application": {
+      "title": "Application",
+      "description": "Job application tracking",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "candidate_id": { "type": "string" },
+        "recruiter_id": { "type": "string" },
+        "job_link": { "type": "string" },
+        "applied_at": { "type": "string" }
+      },
+      "required": ["id", "candidate_id", "job_link"]
+    },
+    "InterviewSupportRequest": {
+      "title": "InterviewSupportRequest",
+      "description": "Main interview support request entity",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "candidate_id": { "type": "string" },
+        "recruiter_id": { "type": "string" },
+        "cs_id": { "type": "string" },
+        "company_name": { "type": "string" },
+        "job_title": { "type": "string" },
+        "job_description": { "type": "string" },
+        "overall_status": { "type": "string" }
+      }
+    },
+    "InterviewRound": {
+      "title": "InterviewRound",
+      "description": "Individual interview rounds",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "request_id": { "type": "string" },
+        "status": { "type": "string" },
+        "proxy_user_id": { "type": "string" }
+      }
+    },
+    "ProxyAvailability": {
+      "title": "ProxyAvailability",
+      "description": "Proxy team availability slots",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "proxy_user_id": { "type": "string" },
+        "slot_start": { "type": "string" },
+        "slot_end": { "type": "string" },
+        "slot_status": { "type": "string" }
+      }
+    },
+    "CalendarEvent": {
+      "title": "CalendarEvent",
+      "description": "Calendar sync events for interview rounds",
+      "type": "object",
+      "properties": {
+        "interview_round_id": { "type": "string" },
+        "interview_request_id": { "type": "string" },
+        "summary": { "type": "string" },
+        "start_time": { "type": "string" },
+        "end_time": { "type": "string" },
+        "reserved_start": { "type": "string" },
+        "reserved_end": { "type": "string" },
+        "proxy_user_id": { "type": "string" },
+        "status": { "type": "string" },
+        "notifications_sent": { "type": "boolean" },
+        "created_at": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "jpc_calendar_events": {
+      "schema": "CalendarEvent",
+      "description": "Calendar sync records"
+    },
+    "jpc_users": {
+        "schema": "User",
+        "description": "Collection of system users"
+      },
+      "jpc_candidates": {
+        "schema": "Candidate",
+        "description": "Collection of candidates"
+      },
+      "jpc_applications": {
+        "schema": "Application",
+        "description": "Collection of job applications"
+      },
+      "jpc_interview_requests": {
+        "schema": "InterviewSupportRequest",
+        "description": "Collection of interview support requests"
+      },
+      "jpc_interview_rounds": {
+        "schema": "InterviewRound",
+        "description": "Collection of interview rounds"
+      },
+      "jpc_proxy_availability": {
+        "schema": "ProxyAvailability",
+        "description": "Collection of proxy availability slots"
+      },
+      "jpc_interview_feedback": {
+        "schema": "object",
+        "description": "Interview feedback"
+      },
+      "jpc_interview_booking_links": {
+        "schema": "object",
+        "description": "Booking links for candidates"
+      },
+      "jpc_interview_notifications": {
+        "schema": "object",
+        "description": "Interview related notifications"
+      },
+      "jpc_interview_activity_logs": {
+        "schema": "object",
+        "description": "Interview activity logs"
+      },
+      "jpc_notifications": {
+        "schema": "object",
+        "description": "System notifications"
+      },
+    "jpc_report_logs": {
+      "schema": "object",
+      "description": "Reporting logs"
+    },
+    "jpc_activity_logs": {
+      "schema": "object",
+      "description": "Activity logs for candidates"
+    },
+    "jpc_cv_files": {
+      "schema": "object",
+      "description": "Collection of uploaded CV files and metadata"
+    },
+    "jpc_resume_requests": {
+      "schema": "object",
+      "description": "Resume change requests"
+    },
+    "jpc_prep_requests": {
+      "schema": "object",
+      "description": "Resume understanding and interview question requests"
+    }
+  }
+}
