@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
 import { 
+  subscribeToCollection, 
   saveCandidate, 
   updateTargetReductionRequest, 
   addNotification, 
@@ -125,26 +125,18 @@ export const TargetDashboard: React.FC = () => {
   const { user, isAuthReady } = useAuth();
   const { showToast } = useToast();
 
-  const { 
-    candidates, 
-    applications, 
-    targetReductions: rawTargetRequests, 
-    users: team, 
-    interviewRequests: interviews, 
-    isDataReady 
-  } = useData();
-
-  const targetRequests = useMemo(() => {
-    return [...rawTargetRequests].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }, [rawTargetRequests]);
-
-  const loading = !isDataReady;
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [targetRequests, setTargetRequests] = useState<TargetReductionRequest[]>([]);
+  const [team, setTeam] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Filter States
   const [period, setPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [searchTerm, setSearchTerm] = useState('');
   const [recruiterFilter, setRecruiterFilter] = useState<string>('all');
   const [complianceFilter, setComplianceFilter] = useState<'all' | 'missed' | 'met' | 'ongoing' | 'pending_reduction'>('all');
+
   const [activeTab, setActiveTab] = useState<'candidates' | 'recruiters'>('candidates');
 
   // Trigger Report States
@@ -156,7 +148,31 @@ export const TargetDashboard: React.FC = () => {
   const [selectedRange, setSelectedRange] = useState<number>(14);
   const [aiAnalysisText, setAiAnalysisText] = useState<string>('');
   const [isLoadingAI, setIsLoadingAI] = useState<boolean>(false);
+  const [interviews, setInterviews] = useState<InterviewSupportRequest[]>([]);
   const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (!isAuthReady) return;
+
+    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', setCandidates);
+    const unsubApps = subscribeToCollection<Application>('jpc_applications', setApplications);
+    const unsubTargets = subscribeToCollection<TargetReductionRequest>('jpc_target_reductions', (data) => {
+      setTargetRequests(data.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+    });
+    const unsubTeam = subscribeToCollection<User>('jpc_users', (data) => {
+      setTeam(data);
+      setLoading(false);
+    });
+    const unsubInterviews = subscribeToCollection<InterviewSupportRequest>('jpc_interview_requests', setInterviews);
+
+    return () => {
+      unsubCandidates();
+      unsubApps();
+      unsubTargets();
+      unsubTeam();
+      unsubInterviews();
+    };
+  }, [isAuthReady]);
 
   // Date boundary calculations (Eastern USA Timezone matching standard app trackers)
   const todayStr = useMemo(() => getEasternDate(), []);

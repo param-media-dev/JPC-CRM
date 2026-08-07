@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { 
@@ -18,11 +18,11 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
+  subscribeToCollection, 
   addFeatureAnnouncement, 
   updateFeatureAnnouncement, 
   deleteFeatureAnnouncement 
 } from '../services/storage';
-import { useData } from '../contexts/DataContext';
 import { FeatureAnnouncement, Role } from '../types';
 import { cn } from '../lib/utils';
 import Select from 'react-select';
@@ -44,14 +44,17 @@ export const FeatureAnnouncements: React.FC = () => {
   const { showToast } = useToast();
   const isAdmin = user?.role === 'administrator';
 
-  const { featureAnnouncements: rawAnnouncements } = useData();
-  const announcements = useMemo(() => {
-    return [...rawAnnouncements].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }, [rawAnnouncements]);
-
+  const [announcements, setAnnouncements] = useState<FeatureAnnouncement[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingAnnouncement, setEditingAnnouncement] = useState<FeatureAnnouncement | null>(null);
   const [activeFilter, setActiveFilter] = useState<'all' | 'my_team'>('all');
+
+  useEffect(() => {
+    const unsub = subscribeToCollection<FeatureAnnouncement>('jpc_feature_announcements', (data) => {
+      setAnnouncements(data.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+    });
+    return unsub;
+  }, []);
 
   const filteredAnnouncements = useMemo(() => {
     if (activeFilter === 'my_team' && user) {

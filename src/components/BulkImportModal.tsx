@@ -1,14 +1,15 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Modal } from './Modal';
 import { STAGES, LEAD_SOURCES } from '../constants';
 import { generateId, saveCandidate, seedQCChecklist, logActivity, checkDuplicateCandidate } from '../services/storage';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { useData } from '../contexts/DataContext';
 import { Candidate, Stage, User } from '../types';
 import { Upload, FileText, CheckCircle, AlertCircle, Loader2, Download, Table } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Papa from 'papaparse';
+import { collection, getDocs } from 'firebase/firestore';
+import { db } from '../firebase';
 
 interface BulkImportModalProps {
   isOpen: boolean;
@@ -19,12 +20,24 @@ interface BulkImportModalProps {
 export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClose, onSuccess }) => {
   const { user } = useAuth();
   const { showToast } = useToast();
-  const { users: allUsers } = useData();
   const [isImporting, setIsImporting] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
   const [parsedData, setParsedData] = useState<any[]>([]);
   const [selectedStage, setSelectedStage] = useState<Stage>('lead_generation');
+  const [allUsers, setAllUsers] = useState<User[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const snap = await getDocs(collection(db, 'jpc_users'));
+        setAllUsers(snap.docs.map(d => ({ id: d.id, ...d.data() } as User)));
+      } catch (error) {
+        console.error('Error fetching users for import:', error);
+      }
+    };
+    fetchUsers();
+  }, []);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

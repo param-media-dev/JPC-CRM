@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../firebase';
-import { doc, onSnapshot, collection, query, where } from 'firebase/firestore';
-import { Candidate, Payment, Application, InterviewSupportRequest, ActivityLog } from '../types';
+import { doc, onSnapshot, collection, query, where, orderBy, limit } from 'firebase/firestore';
+import { Candidate, Payment, Application, InterviewSupportRequest, ActivityLog, InterviewRound } from '../types';
 import { STAGES } from '../constants';
 import { 
   TrendingUp, 
@@ -14,10 +14,15 @@ import {
   Activity,
   History,
   Calendar,
-  ArrowUpRight
+  ArrowUpRight,
+  Download,
+  AlertCircle,
+  ExternalLink,
+  ChevronRight
 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
+import { handleViewFile } from '../services/fileService';
 import { 
   BarChart, 
   Bar, 
@@ -39,6 +44,7 @@ export const CandidateDashboard: React.FC = () => {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
   const [interviews, setInterviews] = useState<InterviewSupportRequest[]>([]);
+  const [interviewRounds, setInterviewRounds] = useState<InterviewRound[]>([]);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -58,12 +64,23 @@ export const CandidateDashboard: React.FC = () => {
       setPayments(snap.docs.map(d => d.data() as Payment));
     });
 
-    const unsubApps = onSnapshot(query(collection(db, 'jpc_applications'), where('candidate_id', '==', id)), (snap) => {
+    const unsubApps = onSnapshot(query(collection(db, 'jpc_applications'), where('candidate_id', '==', id), orderBy('applied_at', 'desc'), limit(50)), (snap) => {
       setApplications(snap.docs.map(d => d.data() as Application));
     });
 
     const unsubInterviews = onSnapshot(query(collection(db, 'jpc_interview_requests'), where('candidate_id', '==', id)), (snap) => {
-      setInterviews(snap.docs.map(d => d.data() as InterviewSupportRequest));
+      const requests = snap.docs.map(d => d.data() as InterviewSupportRequest);
+      setInterviews(requests);
+
+      // Fetch rounds for these requests
+      if (requests.length > 0) {
+        const requestIds = requests.map(r => r.id);
+        // Firebase 'in' query limit is 30, we likely have fewer requests
+        const roundsQuery = query(collection(db, 'jpc_interview_rounds'), where('request_id', 'in', requestIds.slice(0, 30)));
+        onSnapshot(roundsQuery, (roundsSnap) => {
+          setInterviewRounds(roundsSnap.docs.map(d => d.data() as InterviewRound));
+        });
+      }
     });
 
     const unsubActivity = onSnapshot(query(collection(db, 'jpc_activity_logs'), where('candidate_id', '==', id)), (snap) => {
@@ -113,13 +130,47 @@ export const CandidateDashboard: React.FC = () => {
 
   if (!candidate) return null;
 
+  const overduePayments = payments.filter(p => p.status === 'pending' && p.due_date && new Date(p.due_date) < new Date());
+
   const currentStageInfo = STAGES[candidate.current_stage];
   const stageIndex = Object.keys(STAGES).indexOf(candidate.current_stage);
   const totalStages = Object.keys(STAGES).length - 2; // Exclude completed and not_interested
   const progress = Math.min(100, Math.max(0, (stageIndex / totalStages) * 100));
 
+  const handleDownloadResume = () => {
+    const resumeUrl = candidate.resume_url || candidate.resume_base64;
+    if (resumeUrl) {
+      handleViewFile(resumeUrl, candidate.resume_filename || 'resume.pdf');
+    }
+  };
+
   return (
     <div className="space-y-8 pb-10">
+      {/* Overdue Payment Alert */}
+      <AnimatePresence>
+        {overduePayments.length > 0 && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="bg-red-500/10 border border-red-500/20 rounded-3xl p-6 flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-red-500 flex items-center justify-center shrink-0">
+                <AlertCircle className="w-6 h-6 text-white" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-red-500">Action Required: Payment Overdue</h3>
+                <p className="text-sm text-red-500/80">You have {overduePayments.length} pending payment(s) that are past their due date. Please settle your dues to avoid any interruption in services.</p>
+              </div>
+              <button className="px-6 py-2 bg-red-500 text-white font-bold rounded-xl hover:bg-red-600 transition-colors">
+                Pay Now
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Welcome Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
@@ -322,6 +373,157 @@ export const CandidateDashboard: React.FC = () => {
         </div>
       </div>
 
+      {/* Documents & Resume Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2 bg-bg-secondary border border-border-primary rounded-3xl p-8 shadow-sm">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-lg font-bold text-text-primary flex items-center gap-2">
+              <FileText className="w-5 h-5 text-accent-blue" />
+              Documents & Resume
+            </h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-6 bg-bg-tertiary/50 rounded-2xl border border-border-primary/50 flex items-center justify-between group">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-accent-blue/10 flex items-center justify-center">
+                  <FileText className="w-6 h-6 text-accent-blue" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-text-primary">Professional Resume</p>
+                  <p className="text-xs text-text-secondary mt-0.5 truncate max-w-[150px]">
+                    {candidate.resume_filename || 'No resume uploaded'}
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={handleDownloadResume}
+                disabled={!candidate.resume_url && !candidate.resume_base64}
+                className="p-2 rounded-lg bg-bg-secondary border border-border-primary text-text-primary hover:bg-accent-blue hover:text-white hover:border-accent-blue transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Download Resume"
+              >
+                <Download className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 bg-bg-tertiary/50 rounded-2xl border border-border-primary/50 flex items-center justify-between group opacity-50">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-accent-purple/10 flex items-center justify-center">
+                  <FileText className="w-6 h-6 text-accent-purple" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-text-primary">Signed Agreement</p>
+                  <p className="text-xs text-text-secondary mt-0.5">
+                    {candidate.agreement_filename || 'Not available'}
+                  </p>
+                </div>
+              </div>
+              <button 
+                className="p-2 rounded-lg bg-bg-secondary border border-border-primary text-text-primary transition-all cursor-not-allowed"
+                title="View Agreement"
+                disabled
+              >
+                <ExternalLink className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+          <div className="mt-6 p-4 bg-accent-blue/5 border border-accent-blue/10 rounded-xl">
+            <p className="text-xs text-accent-blue flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              Need to update your resume? Please contact your assigned recruiter or CS manager.
+            </p>
+          </div>
+        </div>
+
+        <div className="bg-bg-secondary border border-border-primary rounded-3xl p-8 shadow-sm flex flex-col">
+          <h3 className="text-lg font-bold text-text-primary mb-6 flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-accent-teal" />
+            Quick Actions
+          </h3>
+          <div className="space-y-3 flex-1">
+            <button className="w-full p-4 text-left bg-bg-tertiary hover:bg-accent-blue/5 rounded-2xl border border-border-primary hover:border-accent-blue/30 transition-all flex items-center justify-between group">
+              <span className="text-sm font-bold text-text-primary group-hover:text-accent-blue">Request Mock Interview</span>
+              <ChevronRight className="w-4 h-4 text-text-muted group-hover:text-accent-blue" />
+            </button>
+            <button className="w-full p-4 text-left bg-bg-tertiary hover:bg-accent-purple/5 rounded-2xl border border-border-primary hover:border-accent-purple/30 transition-all flex items-center justify-between group">
+              <span className="text-sm font-bold text-text-primary group-hover:text-accent-purple">Resume Briefing</span>
+              <ChevronRight className="w-4 h-4 text-text-muted group-hover:text-accent-purple" />
+            </button>
+            <button className="w-full p-4 text-left bg-bg-tertiary hover:bg-accent-amber/5 rounded-2xl border border-border-primary hover:border-accent-amber/30 transition-all flex items-center justify-between group">
+              <span className="text-sm font-bold text-text-primary group-hover:text-accent-amber">Raise Support Ticket</span>
+              <ChevronRight className="w-4 h-4 text-text-muted group-hover:text-accent-amber" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Application Details Section */}
+      <div className="bg-bg-secondary border border-border-primary rounded-3xl p-8 shadow-sm">
+        <div className="flex items-center justify-between mb-8">
+          <h3 className="text-xl font-bold text-text-primary flex items-center gap-2">
+            <FileText className="w-6 h-6 text-accent-blue" />
+            Application Details
+          </h3>
+          <div className="flex items-center gap-2 px-4 py-2 bg-accent-blue/10 rounded-xl">
+            <span className="text-xs font-bold text-accent-blue">{applications.length} Total Applications</span>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="border-b border-border-primary">
+                <th className="pb-4 text-[10px] font-bold text-text-muted uppercase tracking-widest px-4">Company & Position</th>
+                <th className="pb-4 text-[10px] font-bold text-text-muted uppercase tracking-widest px-4">Status</th>
+                <th className="pb-4 text-[10px] font-bold text-text-muted uppercase tracking-widest px-4">Applied Date</th>
+                <th className="pb-4 text-[10px] font-bold text-text-muted uppercase tracking-widest px-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border-primary/50">
+              {applications.slice(0, 10).map((app) => (
+                <tr key={app.id} className="group hover:bg-bg-tertiary/30 transition-colors">
+                  <td className="py-5 px-4">
+                    <div>
+                      <p className="text-sm font-bold text-text-primary">{app.company_name}</p>
+                      <p className="text-xs text-text-secondary mt-0.5">{app.job_title || 'Software Engineer'}</p>
+                    </div>
+                  </td>
+                  <td className="py-5 px-4">
+                    <span className={cn(
+                      "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                      app.status === 'Shortlisted' ? "bg-accent-green/10 text-accent-green border border-accent-green/20" :
+                      app.status === 'Rejected' ? "bg-red-500/10 text-red-500 border border-red-500/20" :
+                      "bg-accent-blue/10 text-accent-blue border border-accent-blue/20"
+                    )}>
+                      {app.status || 'Applied'}
+                    </span>
+                  </td>
+                  <td className="py-5 px-4 text-sm text-text-secondary">
+                    {new Date(app.applied_at).toLocaleDateString()}
+                  </td>
+                  <td className="py-5 px-4 text-right">
+                    <a 
+                      href={app.job_link} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs font-bold text-accent-blue hover:underline"
+                    >
+                      View Job <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </td>
+                </tr>
+              ))}
+              {applications.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="py-10 text-center text-text-muted">
+                    No applications found in your profile.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* Recent Activity & Interviews */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Recent Activity */}
@@ -330,8 +532,8 @@ export const CandidateDashboard: React.FC = () => {
             <History className="w-5 h-5 text-accent-blue" />
             Recent Updates
           </h3>
-          <div className="space-y-4">
-            {activityLogs.slice(0, 5).map((log) => (
+          <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+            {activityLogs.slice(0, 8).map((log) => (
               <div key={log.id} className="flex gap-4 p-4 bg-bg-tertiary/50 rounded-2xl border border-border-primary/50">
                 <div className="w-10 h-10 rounded-xl bg-accent-blue/10 flex items-center justify-center shrink-0">
                   <Activity className="w-5 h-5 text-accent-blue" />
@@ -349,32 +551,78 @@ export const CandidateDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Upcoming Interviews */}
+        {/* Detailed Interview Schedule */}
         <div className="bg-bg-secondary border border-border-primary rounded-3xl p-8 shadow-sm">
           <h3 className="text-lg font-bold text-text-primary mb-6 flex items-center gap-2">
             <Video className="w-5 h-5 text-accent-purple" />
-            Interview Schedule
+            Interview Details
           </h3>
-          <div className="space-y-4">
-            {interviews.filter(i => i.overall_status !== 'completed' && i.overall_status !== 'rejected').slice(0, 5).map((interview) => (
-              <div key={interview.id} className="flex items-center justify-between p-4 bg-bg-tertiary/50 rounded-2xl border border-border-primary/50">
-                <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-xl bg-accent-purple/10 flex items-center justify-center shrink-0">
-                    <Calendar className="w-5 h-5 text-accent-purple" />
+          <div className="space-y-4 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
+            {interviews.map((interview) => {
+              const rounds = interviewRounds.filter(r => r.request_id === interview.id);
+              return (
+                <div key={interview.id} className="p-6 bg-bg-tertiary/50 rounded-2xl border border-border-primary/50 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-sm font-bold text-text-primary">{interview.interview_company_name || interview.company_name}</h4>
+                      <p className="text-xs text-text-secondary">{interview.job_title}</p>
+                    </div>
+                    <span className={cn(
+                      "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border",
+                      interview.overall_status === 'confirmed' ? "bg-accent-green/10 text-accent-green border-accent-green/20" :
+                      interview.overall_status === 'live' ? "bg-red-500/10 text-red-500 border-red-500/20 animate-pulse" :
+                      "bg-accent-blue/10 text-accent-blue border-accent-blue/20"
+                    )}>
+                      {interview.overall_status.replace('_', ' ')}
+                    </span>
                   </div>
-                  <div>
-                    <p className="text-sm font-bold text-text-primary">
-                      {interview.overall_status === 'confirmed' ? 'Confirmed Interview' : 'Pending Schedule'}
-                    </p>
-                    <p className="text-xs text-text-secondary mt-1">
-                      {interview.overall_status}
-                    </p>
+
+                  <div className="space-y-2">
+                    {rounds.length > 0 ? rounds.map((round, idx) => (
+                      <div key={round.id} className="flex items-center justify-between p-3 bg-bg-secondary rounded-xl border border-border-primary/30">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-accent-purple/10 flex items-center justify-center">
+                            <Clock className="w-4 h-4 text-accent-purple" />
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-text-primary">{round.round_label}</p>
+                            <p className="text-[10px] text-text-secondary">
+                              {round.booked_slot_time ? new Date(round.booked_slot_time).toLocaleString() : 'Not booked yet'}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-bold text-text-muted uppercase">{round.status}</span>
+                      </div>
+                    )) : (
+                      <p className="text-center py-2 text-[10px] text-text-muted italic">No rounds defined for this request</p>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <a 
+                      href={interview.job_link}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 py-2 bg-bg-secondary border border-border-primary rounded-xl text-[10px] font-bold text-text-primary hover:bg-bg-tertiary transition-colors text-center"
+                    >
+                      View JD
+                    </a>
+                    {interview.application_link && (
+                      <a 
+                        href={interview.application_link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex-1 py-2 bg-bg-secondary border border-border-primary rounded-xl text-[10px] font-bold text-text-primary hover:bg-bg-tertiary transition-colors text-center"
+                      >
+                        App Link
+                      </a>
+                    )}
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {interviews.length === 0 && (
-              <p className="text-center py-10 text-text-muted">No interviews scheduled yet.</p>
+              <p className="text-center py-10 text-text-muted">No interview details found.</p>
             )}
           </div>
         </div>

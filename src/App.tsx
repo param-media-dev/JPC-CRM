@@ -1,6 +1,5 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { DataProvider } from './contexts/DataContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { Sidebar } from './components/Sidebar';
@@ -8,6 +7,7 @@ import { isProxyUser } from './services/interviewService';
 import { AddCandidateModal } from './components/AddCandidateModal';
 import { NotificationList } from './components/NotificationList';
 import { SLAMonitor } from './components/SLAMonitor';
+import { MigrationExecutor } from './MigrationExecutor';
 import { migrateAllChecklists, testConnection, autoAssignFaizToCandidates } from './services/storage';
 import { Plus, Menu } from 'lucide-react';
 
@@ -73,14 +73,10 @@ const AppContent: React.FC = () => {
         }
       }
       
-      // Only run maintenance tasks for administrators — once per day max
+      // Only run maintenance tasks for administrators
       if (user.role === 'administrator' || user.role === 'jpc_sysadmin') {
-        const today = new Date().toISOString().split('T')[0];
-        if (localStorage.getItem('last_migration_date') !== today) {
-          localStorage.setItem('last_migration_date', today);
-          migrateAllChecklists().catch(console.error);
-          autoAssignFaizToCandidates().catch(console.error);
-        }
+        migrateAllChecklists().catch(console.error);
+        autoAssignFaizToCandidates().catch(console.error);
       }
     }
   }, [isAuthReady, user]);
@@ -229,6 +225,7 @@ const AppContent: React.FC = () => {
       </main>
 
       <SLAMonitor />
+      <MigrationExecutor />
       <AddCandidateModal 
         isOpen={isAddModalOpen} 
         onClose={() => setIsAddModalOpen(false)}
@@ -244,11 +241,9 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <DataProvider>
-          <ToastProvider>
-            <AppContent />
-          </ToastProvider>
-        </DataProvider>
+        <ToastProvider>
+          <AppContent />
+        </ToastProvider>
       </AuthProvider>
     </ThemeProvider>
   );

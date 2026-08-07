@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
-import { saveUser, generateId } from '../services/storage';
+import { subscribeToCollection, saveUser, generateId } from '../services/storage';
 import { Users, UserPlus, Shield, Mail, Phone, MoreVertical, Edit2, Trash2, X, Save, AlertCircle, ShieldCheck, UserCheck, Lock, Copy, TrendingUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -33,8 +32,8 @@ const ROLES: { value: UserRole; label: string; icon: any; color: string }[] = [
 export const Team: React.FC = () => {
   const { user, isAuthReady } = useAuth();
   const { showToast } = useToast();
-  const { users: team, candidates, isDataReady } = useData();
-  const isLoading = !isDataReady;
+  const [team, setTeam] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [generatedPassword, setGeneratedPassword] = useState<string | null>(null);
@@ -62,7 +61,23 @@ export const Team: React.FC = () => {
     is_on_leave: false,
   });
 
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [activeTab, setActiveTab] = useState<'members' | 'marketing_profiles'>('members');
+
+  useEffect(() => {
+    if (!isAuthReady) return;
+    const unsub = subscribeToCollection<User>('jpc_users', (data) => {
+      setTeam(data);
+      setIsLoading(false);
+    });
+    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
+      setCandidates(data);
+    });
+    return () => {
+      unsub();
+      unsubCandidates();
+    };
+  }, [isAuthReady]);
 
   const visibleTeam = useMemo(() => {
     if (!user) return [];
@@ -105,6 +120,7 @@ export const Team: React.FC = () => {
       return;
     }
 
+    setIsLoading(true);
     try {
       const email = formData.username.includes('@') ? formData.username : `${formData.username}@placify-crm.com`;
       
@@ -116,6 +132,7 @@ export const Team: React.FC = () => {
 
       if (isDuplicate) {
         showToast('A team member with this username already exists.', 'error');
+        setIsLoading(false);
         return;
       }
 
@@ -189,6 +206,7 @@ export const Team: React.FC = () => {
 
               await setDoc(doc(db, 'jpc_users', String(existingUser.id)), updatedUser);
               showToast('Existing account updated with new role!', 'success');
+              setIsLoading(false);
               setIsModalOpen(false);
               setEditingUser(null);
               setFormData({ username: '', display_name: '', role: 'jpc_sales', password: '', leader_id: null, candidate_id: '', portal_link: '', is_on_leave: false });
@@ -200,6 +218,7 @@ export const Team: React.FC = () => {
             message = 'Password should be at least 6 characters.';
           }
           showToast(message, 'error');
+          setIsLoading(false);
           return;
         }
       } else {
@@ -230,6 +249,8 @@ export const Team: React.FC = () => {
     } catch (error) {
       console.error('Save user error:', error);
       showToast('Failed to save user', 'error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -277,6 +298,7 @@ export const Team: React.FC = () => {
 
   const handleDelete = async () => {
     if (!deletingUser) return;
+    setIsLoading(true);
     try {
       await deleteDoc(doc(db, 'jpc_users', String(deletingUser.id)));
       showToast('User removed', 'success');
@@ -284,6 +306,8 @@ export const Team: React.FC = () => {
     } catch (error) {
       console.error('Delete user error:', error);
       showToast('Failed to remove user', 'error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -383,6 +407,7 @@ export const Team: React.FC = () => {
   const resetDatabase = async () => {
     if (user?.role !== 'administrator') return;
     
+    setIsLoading(true);
     try {
       const collectionsToClear = [
         'jpc_candidates',
@@ -419,11 +444,14 @@ export const Team: React.FC = () => {
     } catch (error) {
       console.error('Reset database error:', error);
       showToast('Failed to reset database. Check console for details.', 'error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const seedAllUsers = async () => {
     if (user?.role !== 'administrator') return;
+    setIsLoading(true);
 
     const USERS_TO_CREATE = [
       { display_name: "Yash Pandya", email: "yash.pandya@auriic.co", password: "Auriic@1031", role: "jpc_sysadmin", username: "yash.pandya" },
@@ -488,6 +516,7 @@ export const Team: React.FC = () => {
     }
     
     showToast(`Batch operation complete. Added ${createdCount} new users.`, 'success');
+    setIsLoading(false);
   };
 
   if (isLoading) {

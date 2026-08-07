@@ -1,22 +1,32 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
-import { saveCandidate, logActivity } from '../services/storage';
+import { subscribeToCollection, saveCandidate, logActivity } from '../services/storage';
 import { UserX, Search, Trash2, RotateCcw, AlertCircle, Clock, Calendar, Phone, Mail } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Candidate, User } from '../types';
 import { canUserAccessCandidate } from '../lib/permissions';
 
 export const NotEligible: React.FC = () => {
-  const { user } = useAuth();
-  const { candidates: rawCandidates, users: allUsers, isDataReady } = useData();
-  
-  const candidates = useMemo(() => {
-    return rawCandidates.filter(c => c.current_stage === 'not_eligible');
-  }, [rawCandidates]);
-
-  const isLoading = !isDataReady;
+  const { user, isAuthReady } = useAuth();
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
+
+  useEffect(() => {
+    if (!isAuthReady) return;
+    const unsub = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
+      setCandidates(data.filter(c => c.current_stage === 'not_eligible'));
+      setIsLoading(false);
+    });
+    const unsubUsers = subscribeToCollection<User>('jpc_users', (data) => {
+      setAllUsers(data);
+    });
+    return () => {
+      unsub();
+      unsubUsers();
+    };
+  }, [isAuthReady]);
 
   const filteredCandidates = useMemo(() => {
     return candidates.filter(c => {

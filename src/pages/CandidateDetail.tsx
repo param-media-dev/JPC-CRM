@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
+  subscribeToCollection,
   saveCandidate, 
   logActivity, 
   addNotification,
@@ -19,7 +20,6 @@ import {
 } from '../services/storage';
 import { uploadFile, handleViewFile } from '../services/fileService';
 import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
 import { useToast } from '../contexts/ToastContext';
 import { canUserAccessCandidate } from '../lib/permissions';
 import { STAGES, TRANSITIONS, LEAD_SOURCES, ROLE_PERMISSIONS, PREVIOUS_STAGES } from '../constants';
@@ -75,7 +75,6 @@ import { getAuth, createUserWithEmailAndPassword, signOut as secondarySignOut, u
 export const CandidateDetail: React.FC = () => {
   const { user, isAuthReady } = useAuth();
   const { showToast } = useToast();
-  const { users: allUsers } = useData();
   
   const params = new URLSearchParams(window.location.hash.split('?')[1]);
   const id = params.get('id');
@@ -112,6 +111,7 @@ export const CandidateDetail: React.FC = () => {
   const [applications, setApplications] = useState<Application[]>([]);
   const [interviews, setInterviews] = useState<InterviewSupportRequest[]>([]);
   const [targetRequests, setTargetRequests] = useState<TargetReductionRequest[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -176,6 +176,10 @@ export const CandidateDetail: React.FC = () => {
       setInterviews(snap.docs.map(d => d.data() as InterviewSupportRequest));
     });
 
+    const unsubUsers = subscribeToCollection<User>('jpc_users', (data) => {
+      setAllUsers(data);
+    });
+
     return () => {
       unsubCandidate();
       unsubPayments();
@@ -187,6 +191,7 @@ export const CandidateDetail: React.FC = () => {
       unsubApps();
       unsubTargetRequests();
       unsubInterviews();
+      unsubUsers();
     };
   }, [isAuthReady, id]);
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
 import { useToast } from '../contexts/ToastContext';
+import { subscribeToCollection } from '../services/storage';
 import { STAGES } from '../constants';
 import { Search, Filter, X, Package, Phone, Mail, MapPin, Calendar, Users, ChevronRight, MoreVertical, ShieldCheck, Plus, Send, Table, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -132,19 +132,12 @@ CandidateRow.displayName = 'CandidateRow';
 export const Candidates: React.FC = () => {
   const { user, isAuthReady } = useAuth();
   const { showToast } = useToast();
-  const { 
-    candidates: allRawCandidates, 
-    users: allUsers, 
-    applications, 
-    followUps, 
-    isDataReady 
-  } = useData();
-
-  const candidates = useMemo(() => {
-    return allRawCandidates.filter(c => c.current_stage !== 'not_interested' && c.current_stage !== 'not_eligible');
-  }, [allRawCandidates]);
-
-  const isLoading = !isDataReady;
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [allRawCandidates, setAllRawCandidates] = useState<Candidate[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [followUps, setFollowUps] = useState<FollowUp[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 300);
   const [stageFilter, setStageFilter] = useState('');
@@ -156,6 +149,36 @@ export const Candidates: React.FC = () => {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  
+  useEffect(() => {
+    if (!isAuthReady) return;
+    
+    // Subscribe to candidates collection for role-wise filtering
+    const unsub = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
+      setAllRawCandidates(data);
+      setCandidates(data.filter(c => c.current_stage !== 'not_interested' && c.current_stage !== 'not_eligible'));
+      setIsLoading(false);
+    });
+
+    const unsubUsers = subscribeToCollection<User>('jpc_users', (data) => {
+      setAllUsers(data);
+    }, 500);
+
+    const unsubApps = subscribeToCollection<Application>('jpc_applications', (data) => {
+      setApplications(data);
+    }, 1000);
+
+    const unsubFollowUps = subscribeToCollection<FollowUp>('jpc_followups', (data) => {
+      setFollowUps(data);
+    }, 1000);
+
+    return () => {
+      unsub();
+      unsubUsers();
+      unsubApps();
+      unsubFollowUps();
+    };
+  }, [isAuthReady]);
 
   // Get stage from URL if present
   useEffect(() => {

@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
+import { subscribeToCollection } from '../services/storage';
 import { STAGES } from '../constants';
 import { Search, Filter, X, Package, Phone, Mail, MapPin, Calendar, Users, ArrowRight, MoreVertical, Edit2, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -10,17 +10,31 @@ import { useDebounce } from '../lib/hooks';
 import { canUserAccessCandidate } from '../lib/permissions';
 
 export const Pipeline: React.FC = () => {
-  const { user } = useAuth();
-  const { candidates: rawCandidates, users: allUsers, isDataReady } = useData();
-  
-  const candidates = useMemo(() => {
-    return rawCandidates.filter(c => c.current_stage !== 'not_interested' && c.current_stage !== 'not_eligible');
-  }, [rawCandidates]);
-
-  const isLoading = !isDataReady;
+  const { user, isAuthReady } = useAuth();
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 300);
   const [entityFilter, setEntityFilter] = useState<'all' | 'sivium' | 'recruiter' | 'normal'>('all');
+
+  useEffect(() => {
+    if (!isAuthReady) return;
+    // Limit collection subscription to 500 for the pipeline view to maintain performance
+    const unsub = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
+      setCandidates(data.filter(c => c.current_stage !== 'not_interested' && c.current_stage !== 'not_eligible'));
+      setIsLoading(false);
+    }, 500);
+
+    const unsubUsers = subscribeToCollection<User>('jpc_users', (data) => {
+      setAllUsers(data);
+    }, 500);
+
+    return () => {
+      unsub();
+      unsubUsers();
+    };
+  }, [isAuthReady]);
 
   const groupedCandidates = useMemo(() => {
     const groups: Record<string, Candidate[]> = {};

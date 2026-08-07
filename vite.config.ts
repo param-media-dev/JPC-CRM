@@ -21,13 +21,6 @@ export default defineConfig(({mode}) => {
       chunkSizeWarningLimit: 1000,
       rollupOptions: {
         output: {
-          manualChunks: {
-            'vendor-react': ['react', 'react-dom'],
-            'vendor-firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore'],
-            'vendor-charts': ['recharts'],
-            'vendor-xlsx': ['xlsx'],
-            'vendor-motion': ['motion'],
-          },
         },
       },
     },

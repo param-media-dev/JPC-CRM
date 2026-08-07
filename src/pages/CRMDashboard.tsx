@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
 import { useToast } from '../contexts/ToastContext';
+import { subscribeToCollection } from '../services/storage';
 import { STAGES } from '../constants';
 import { TimeZoneClocks } from '../components/TimeZoneClocks';
 import { 
@@ -37,22 +37,14 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 export const CRMDashboard: React.FC = () => {
-  const { user } = useAuth();
+  const { user, isAuthReady } = useAuth();
   const { showToast } = useToast();
   
-  const { 
-    candidates: rawCandidates, 
-    followUps, 
-    applications, 
-    users: allUsers, 
-    isDataReady 
-  } = useData();
-
-  const candidates = useMemo(() => {
-    return rawCandidates.filter(c => !c.deleted_at);
-  }, [rawCandidates]);
-
-  const isLoading = !isDataReady;
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [followUps, setFollowUps] = useState<FollowUp[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
   
   // Search state for quick CRM reference
@@ -63,6 +55,37 @@ export const CRMDashboard: React.FC = () => {
   const [selectedSourceFilter, setSelectedSourceFilter] = useState('all');
   const [selectedAgentFilter, setSelectedAgentFilter] = useState('all');
   const [selectedTimeframeFilter, setSelectedTimeframeFilter] = useState('all');
+
+  useEffect(() => {
+    if (!isAuthReady) return;
+
+    setIsLoading(true);
+    // Limit subscriptions to recent 1000 items for dashboard overview to prevent browser hang
+    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
+      const active = data.filter(c => !c.deleted_at);
+      setCandidates(active);
+    }, 1000);
+
+    const unsubFollowUps = subscribeToCollection<FollowUp>('jpc_followups', (data) => {
+      setFollowUps(data);
+    }, 1000);
+
+    const unsubApps = subscribeToCollection<Application>('jpc_applications', (data) => {
+      setApplications(data);
+    }, 1000);
+
+    const unsubUsers = subscribeToCollection<User>('jpc_users', (data) => {
+      setAllUsers(data);
+      setIsLoading(false);
+    });
+
+    return () => {
+      unsubCandidates();
+      unsubFollowUps();
+      unsubApps();
+      unsubUsers();
+    };
+  }, [isAuthReady]);
 
   const uniqueLeadSources = useMemo(() => {
     const sources = new Set<string>();

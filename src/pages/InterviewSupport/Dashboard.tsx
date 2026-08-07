@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { useData } from '../../contexts/DataContext';
 import { useToast } from '../../contexts/ToastContext';
 import { 
+  subscribeToCollection, 
   subscribeToQuery, 
   addInterviewSupportRequest, 
   updateInterviewSupportRequest,
@@ -124,19 +124,7 @@ const customSelectStyles = {
 export const InterviewSupportDashboard: React.FC = () => {
   const { user, isAuthReady } = useAuth();
   const { showToast } = useToast();
-  const { 
-    interviewRequests: requests, 
-    interviewRounds: rounds, 
-    interviewFeedbacks: feedbacks, 
-    candidates, 
-    proxyAvailabilities: availabilities, 
-    calendarEvents, 
-    users,
-    isDataReady
-  } = useData();
 
-  const team = useMemo(() => users.filter(u => !u.deleted_at), [users]);
-  const isLoading = !isDataReady;
   const canEditProtectedAll = useMemo(() => {
     return user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_cs' || user?.role === 'jpc_manager' || user?.role === 'jpc_marketing' || user?.role === 'jpc_proxy';
   }, [user]);
@@ -150,6 +138,14 @@ export const InterviewSupportDashboard: React.FC = () => {
   }, [user]);
   
   const [activeTab, setActiveTab] = useState<TabType>('today');
+  const [requests, setRequests] = useState<InterviewSupportRequest[]>([]);
+  const [rounds, setRounds] = useState<InterviewRound[]>([]);
+  const [feedbacks, setFeedbacks] = useState<InterviewFeedback[]>([]);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [team, setTeam] = useState<User[]>([]);
+  const [availabilities, setAvailabilities] = useState<ProxyAvailability[]>([]);
+  const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [filterDate, setFilterDate] = useState<string>('');
@@ -162,6 +158,31 @@ export const InterviewSupportDashboard: React.FC = () => {
   const [selectedDetailRequest, setSelectedDetailRequest] = useState<InterviewSupportRequest | null>(null);
   const [substitutionRequest, setSubstitutionRequest] = useState<InterviewSupportRequest | null>(null);
   const [selectedProxyId, setSelectedProxyId] = useState<string>('all');
+
+  useEffect(() => {
+    if (!isAuthReady) return;
+
+    const unsubRequests = subscribeToCollection<InterviewSupportRequest>('jpc_interview_requests', setRequests);
+    const unsubRounds = subscribeToCollection<InterviewRound>('jpc_interview_rounds', setRounds);
+    const unsubFeedback = subscribeToCollection<InterviewFeedback>('jpc_interview_feedback', setFeedbacks);
+    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', setCandidates);
+    const unsubAvailabilities = subscribeToCollection<ProxyAvailability>('jpc_proxy_availability', setAvailabilities);
+    const unsubCalendarEvents = subscribeToCollection<any>('jpc_calendar_events', setCalendarEvents);
+    const unsubTeam = subscribeToCollection<User>('jpc_users', (data) => {
+      setTeam(data);
+      setIsLoading(false);
+    });
+
+    return () => {
+      unsubRequests();
+      unsubRounds();
+      unsubFeedback();
+      unsubCandidates();
+      unsubAvailabilities();
+      unsubCalendarEvents();
+      unsubTeam();
+    };
+  }, [isAuthReady]);
   
   const visibleRequests = useMemo(() => {
     if (!user) return [];

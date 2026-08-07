@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
-import { generateId, addNotification } from '../services/storage';
+import { subscribeToCollection, generateId, addNotification } from '../services/storage';
 import { ResumePrepRequest, Candidate, User } from '../types';
 import { 
   Plus, 
@@ -30,22 +29,14 @@ import { uploadFile, handleViewFile } from '../services/fileService';
 type TabType = 'resume_understanding' | 'interview_questions';
 
 export const ResumePrepLog: React.FC = () => {
-  const { user } = useAuth();
+  const { user, isAuthReady } = useAuth();
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<TabType>('resume_understanding');
   
-  const { 
-    prepRequests: rawRequests, 
-    candidates, 
-    users: team, 
-    isDataReady 
-  } = useData();
-
-  const requests = useMemo(() => {
-    return [...rawRequests].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }, [rawRequests]);
-
-  const isLoading = !isDataReady;
+  const [requests, setRequests] = useState<ResumePrepRequest[]>([]);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [team, setTeam] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   
@@ -73,6 +64,24 @@ export const ResumePrepLog: React.FC = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isAuthReady) return;
+
+    const unsubRequests = subscribeToCollection<ResumePrepRequest>('jpc_prep_requests', (data) => {
+      setRequests(data.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+      setIsLoading(false);
+    });
+
+    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', setCandidates);
+    const unsubTeam = subscribeToCollection<User>('jpc_users', setTeam);
+
+    return () => {
+      unsubRequests();
+      unsubCandidates();
+      unsubTeam();
+    };
+  }, [isAuthReady]);
 
   const filteredRequests = useMemo(() => {
     return requests.filter(req => {
@@ -227,6 +236,7 @@ export const ResumePrepLog: React.FC = () => {
   };
 
   const handleDelete = async (requestId: string) => {
+    setIsLoading(true);
     try {
       await deleteDoc(doc(db, 'jpc_prep_requests', requestId));
       showToast('Prep request deleted successfully', 'success');
@@ -235,7 +245,7 @@ export const ResumePrepLog: React.FC = () => {
       console.error('Delete request error:', error);
       showToast('Failed to delete prep request', 'error');
     } finally {
-      setDeletingId(null);
+      setIsLoading(false);
     }
   };
 

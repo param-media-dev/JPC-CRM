@@ -1,7 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
-import { updateFollowUp, logActivity } from '../services/storage';
+import { subscribeToCollection, updateFollowUp, logActivity } from '../services/storage';
 import { STAGES } from '../constants';
 import { Clock, CheckCircle2, Calendar, User, ArrowRight, AlertCircle, Search, Filter } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -10,12 +9,31 @@ import { FollowUp, Candidate, Stage } from '../types';
 import { useDebounce } from '../lib/hooks';
 
 export const FollowUps: React.FC = () => {
-  const { user } = useAuth();
-  const { followUps, candidates, isDataReady } = useData();
-  const isLoading = !isDataReady;
+  const { user, isAuthReady } = useAuth();
+  const [followUps, setFollowUps] = useState<FollowUp[]>([]);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 300);
   const [filter, setFilter] = useState<'all' | 'pending' | 'done'>('pending');
+
+  useEffect(() => {
+    if (!isAuthReady) return;
+
+    const unsubFollowUps = subscribeToCollection<FollowUp>('jpc_followups', (data) => {
+      setFollowUps(data);
+      setIsLoading(false);
+    }, 1000);
+
+    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
+      setCandidates(data);
+    }, 2000);
+
+    return () => {
+      unsubFollowUps();
+      unsubCandidates();
+    };
+  }, [isAuthReady]);
 
   const candidatesMap = useMemo(() => {
     const map = new Map<string, Candidate>();

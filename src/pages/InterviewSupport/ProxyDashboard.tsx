@@ -8,9 +8,9 @@ import {
   clearAllProxyCalendarEvents 
 } from '../../services/calendarService';
 import { useAuth } from '../../contexts/AuthContext';
-import { useData } from '../../contexts/DataContext';
 import { useToast } from '../../contexts/ToastContext';
 import { 
+  subscribeToCollection, 
   addProxyAvailability, 
   updateProxyAvailability, 
   deleteProxyAvailability,
@@ -62,23 +62,19 @@ import { ProxyAssignmentModal } from '../../components/ProxyAssignmentModal';
 export const ProxyDashboard: React.FC = () => {
   const { user, isAuthReady } = useAuth();
   const { showToast } = useToast();
-  const { 
-    proxyAvailabilities: availability, 
-    interviewRounds: rounds, 
-    interviewRequests: requests, 
-    candidates, 
-    interviewFeedbacks: feedbacks, 
-    users: team, 
-    calendarEvents, 
-    isDataReady 
-  } = useData();
-
-  const isLoading = !isDataReady;
+  const [availability, setAvailability] = useState<ProxyAvailability[]>([]);
+  const [rounds, setRounds] = useState<InterviewRound[]>([]);
+  const [requests, setRequests] = useState<InterviewSupportRequest[]>([]);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [viewDate, setViewDate] = useState(new Date());
   const [selectedRoundForFeedback, setSelectedRoundForFeedback] = useState<{round: InterviewRound, request: InterviewSupportRequest} | null>(null);
   const [selectedFeedbackView, setSelectedFeedbackView] = useState<{round: InterviewRound, feedback: InterviewFeedback} | null>(null);
+  const [feedbacks, setFeedbacks] = useState<InterviewFeedback[]>([]);
   const [addSlotConfig, setAddSlotConfig] = useState<{ date: Date } | null>(null);
+  const [team, setTeam] = useState<User[]>([]);
+  const [calendarEvents, setCalendarEvents] = useState<any[]>([]);
   const [proxyAssignmentConfig, setProxyAssignmentConfig] = useState<{ request: InterviewSupportRequest, round: InterviewRound } | null>(null);
   const [directScheduleConfig, setDirectScheduleConfig] = useState<{ request: InterviewSupportRequest, round: InterviewRound } | null>(null);
   const [popupBlockedError, setPopupBlockedError] = useState(false);
@@ -126,6 +122,44 @@ export const ProxyDashboard: React.FC = () => {
       return false;
     });
   }, [rounds, activeProxyId]);
+
+  useEffect(() => {
+    if (!isAuthReady || !user) return;
+
+    // Subscribe to all proxy availability
+    const unsubAvail = subscribeToCollection<ProxyAvailability>('jpc_proxy_availability', setAvailability);
+
+    // Subscribe to all interview rounds
+    const unsubRounds = subscribeToCollection<InterviewRound>('jpc_interview_rounds', setRounds);
+
+    // Subscribe to feedback for historical view
+    const unsubFeedback = subscribeToCollection<InterviewFeedback>('jpc_interview_feedback', setFeedbacks);
+
+    // Subscribe to related requests
+    const unsubReqs = subscribeToCollection<InterviewSupportRequest>('jpc_interview_requests', setRequests);
+
+    // Subscribe to candidates
+    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', setCandidates);
+
+    // Subscribe to team users
+    const unsubTeam = subscribeToCollection<User>('jpc_users', setTeam);
+
+    // Subscribe to calendar events
+    const unsubCalendar = subscribeToCollection<any>('jpc_calendar_events', setCalendarEvents);
+
+    const timer = setTimeout(() => setIsLoading(false), 800);
+
+    return () => {
+      unsubAvail();
+      unsubRounds();
+      unsubFeedback();
+      unsubReqs();
+      unsubCandidates();
+      unsubTeam();
+      unsubCalendar();
+      clearTimeout(timer);
+    };
+  }, [isAuthReady, user]);
 
   useEffect(() => {
     if (activeProxyId) {

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
-import { generateId, logActivity } from '../services/storage';
+import { subscribeToCollection, generateId, logActivity } from '../services/storage';
 import { Application, Candidate, User, Notification } from '../types';
 import { 
   FileText, 
@@ -33,18 +32,11 @@ import { BulkLinkImportModal } from '../components/BulkLinkImportModal';
 export const AppTracker: React.FC = () => {
   const { user, isAuthReady } = useAuth();
   const { showToast } = useToast();
-  const { 
-    applications: rawApplications, 
-    candidates, 
-    users: team, 
-    isDataReady 
-  } = useData();
-
-  const applications = useMemo(() => {
-    return [...rawApplications].sort((a, b) => new Date(b.applied_at).getTime() - new Date(a.applied_at).getTime());
-  }, [rawApplications]);
-
-  const isLoading = !isDataReady;
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [team, setTeam] = useState<User[]>([]);
+  const [reportLogs, setReportLogs] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
@@ -117,7 +109,7 @@ export const AppTracker: React.FC = () => {
       return;
     }
 
-    const candidate = candidateMap.get(exportFilters.candidateId);
+    const candidate = candidates.find(c => c.id === exportFilters.candidateId);
     if (!candidate) return;
 
     // Filter applications
@@ -166,28 +158,39 @@ export const AppTracker: React.FC = () => {
     showToast('XLSX report generated successfully', 'success');
     setIsExportModalOpen(false);
   };
-  // Pre-build lookup Maps so .find() inside loops becomes O(1) instead of O(n)
-  const candidateMap = useMemo(() => {
-    const map = new Map<string, Candidate>();
-    candidates.forEach(c => map.set(c.id, c));
-    return map;
-  }, [candidates]);
 
-  const teamMap = useMemo(() => {
-    const map = new Map<string, User>();
-    team.forEach(u => { map.set(String(u.id), u); if (u.username) map.set(u.username, u); });
-    return map;
-  }, [team]);
+  useEffect(() => {
+    if (!isAuthReady) return;
 
-  const [displayLimit, setDisplayLimit] = useState(100);
+    const unsubApps = subscribeToCollection<Application>('jpc_applications', (data) => {
+      setApplications(data.sort((a, b) => new Date(b.applied_at).getTime() - new Date(a.applied_at).getTime()));
+      setIsLoading(false);
+    });
+
+    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
+      setCandidates(data);
+    });
+
+    const unsubTeam = subscribeToCollection<User>('jpc_users', (data) => {
+      setTeam(data);
+    });
+
+    const unsubLogs = subscribeToCollection<any>('jpc_report_logs', setReportLogs);
+
+    return () => {
+      unsubApps();
+      unsubCandidates();
+      unsubTeam();
+      unsubLogs();
+    };
+  }, [isAuthReady]);
 
   const filteredApps = useMemo(() => {
-    const lowerSearch = searchTerm.toLowerCase();
     return applications.filter(app => {
       // Priority filter by selected candidate
       if (filterCandidateId && app.candidate_id !== filterCandidateId) return false;
 
-      const candidate = candidateMap.get(app.candidate_id);
+      const candidate = candidates.find(c => c.id === app.candidate_id);
       
       // In Application Tracker show only Marketing Active and Interviewing profiles
       if (candidate?.current_stage !== 'marketing_active' && candidate?.current_stage !== 'interviewing') return false;
@@ -197,30 +200,16 @@ export const AppTracker: React.FC = () => {
         if (String(candidate?.assigned_recruiter) !== String(user.id)) return false;
       }
 
-      if (lowerSearch) {
-        const recruiter = teamMap.get(String(app.recruiter_id));
-        const searchStr = `${candidate?.full_name} ${recruiter?.display_name} ${app.job_link}`.toLowerCase();
-        if (!searchStr.includes(lowerSearch)) return false;
-      }
-      return true;
+      const recruiter = team.find(u => u.id === app.recruiter_id);
+      const searchStr = `${candidate?.full_name} ${recruiter?.display_name} ${app.job_link}`.toLowerCase();
+      return searchStr.includes(searchTerm.toLowerCase());
     });
-  }, [applications, candidateMap, teamMap, searchTerm, user, filterCandidateId]);
-
-  // Reset display limit when filter changes
-  useEffect(() => { setDisplayLimit(100); }, [filterCandidateId, searchTerm]);
-
-  const visibleApps = useMemo(() => filteredApps.slice(0, displayLimit), [filteredApps, displayLimit]);
+  }, [applications, candidates, team, searchTerm, user, filterCandidateId]);
 
   const stats = useMemo(() => {
     const today = getEasternDate();
     const todayApps = applications.filter(a => a.applied_at === today);
     
-    // Pre-build today's app counts by candidate_id
-    const todayCounts = new Map<string, number>();
-    todayApps.forEach(a => {
-      todayCounts.set(a.candidate_id, (todayCounts.get(a.candidate_id) || 0) + 1);
-    });
-
     // Calculate candidate-wise progress for assigned candidates
     const candidateProgress = candidates
       .filter(c => {
@@ -233,7 +222,7 @@ export const AppTracker: React.FC = () => {
       })
       .filter(c => c.current_stage === 'marketing_active' || c.current_stage === 'interviewing')
       .map(c => {
-        const count = todayCounts.get(c.id) || 0;
+        const count = todayApps.filter(a => a.candidate_id === c.id).length;
         const profiles = c.profiles_count || 1;
         const target = profiles * (c.custom_daily_target || 40);
         return {
@@ -250,7 +239,7 @@ export const AppTracker: React.FC = () => {
       totalToday: todayApps.length,
       candidateProgress
     };
-  }, [applications, candidates, user]);
+  }, [applications, team, candidates, user]);
 
   // My candidates filter
   const myCandidates = useMemo(() => {
@@ -270,7 +259,7 @@ export const AppTracker: React.FC = () => {
     // If keyboard event, only trigger on Enter
     if ('key' in e && e.key !== 'Enter') return;
 
-    const candidate = candidateMap.get(filterCandidateId!);
+    const candidate = candidates.find(c => c.id === filterCandidateId);
     if (!candidate) return;
 
     // Check for duplicate link for THIS candidate specifically
@@ -466,7 +455,7 @@ export const AppTracker: React.FC = () => {
                 <div className="flex justify-between items-start">
                   <div className="space-y-0.5">
                     <p className="text-sm font-bold text-text-primary truncate max-w-[150px]">{p.name}</p>
-                    <p className="text-[10px] text-text-muted uppercase tracking-wider">{p.profiles} Profile(s) @ {candidateMap.get(p.id)?.custom_daily_target || 40}/profile</p>
+                    <p className="text-[10px] text-text-muted uppercase tracking-wider">{p.profiles} Profile(s) @ {candidates.find(c => c.id === p.id)?.custom_daily_target || 40}/profile</p>
                   </div>
                   <div className="text-right">
                     <span className={cn("text-xs font-bold", p.count >= p.target ? "text-accent-green" : "text-accent-amber")}>
@@ -513,7 +502,7 @@ export const AppTracker: React.FC = () => {
               <>
                 <button 
                   onClick={() => {
-                    const candidate = candidateMap.get(filterCandidateId!);
+                    const candidate = candidates.find(c => c.id === filterCandidateId);
                     if (candidate) {
                       setTrackingCandidate(candidate);
                       setIsBulkModalOpen(true);
@@ -535,7 +524,7 @@ export const AppTracker: React.FC = () => {
             )}
             <div className="flex items-center gap-2 text-xs font-bold text-text-muted uppercase tracking-widest ml-1">
               <FileText className="w-4 h-4" />
-              <span>{filterCandidateId ? candidateMap.get(filterCandidateId!)?.full_name + "'s Sheet" : "Master Sheet View"}</span>
+              <span>{filterCandidateId ? candidates.find(c => c.id === filterCandidateId)?.full_name + "'s Sheet" : "Master Sheet View"}</span>
             </div>
           </div>
         </div>
@@ -574,7 +563,7 @@ export const AppTracker: React.FC = () => {
                   </td>
                   <td className="border border-border-primary px-3 py-2 bg-bg-secondary">
                     <span className="text-xs font-bold text-text-primary truncate">
-                      {candidateMap.get(filterCandidateId!)?.full_name}
+                      {candidates.find(c => c.id === filterCandidateId)?.full_name}
                     </span>
                   </td>
                   <td className="border border-border-primary px-3 py-2 bg-bg-secondary">
@@ -603,9 +592,9 @@ export const AppTracker: React.FC = () => {
                 </tr>
               )}
 
-              {visibleApps.map((app, index) => {
-                const candidate = candidateMap.get(app.candidate_id);
-                const recruiter = teamMap.get(String(app.recruiter_id));
+              {filteredApps.map((app, index) => {
+                const candidate = candidates.find(c => c.id === app.candidate_id);
+                const recruiter = team.find(u => u.id === app.recruiter_id);
                 return (
                   <tr key={app.id} className="hover:bg-bg-tertiary/30 transition-colors group">
                     <td className="border border-border-primary px-3 py-2 text-center text-[10px] font-mono text-text-muted">
@@ -673,21 +662,9 @@ export const AppTracker: React.FC = () => {
                   </tr>
                 );
               })}
-              {visibleApps.length < filteredApps.length && (
-                <tr>
-                  <td colSpan={8} className="px-6 py-4 text-center border border-border-primary">
-                    <button 
-                      onClick={() => setDisplayLimit(prev => prev + 100)}
-                      className="px-6 py-2.5 bg-accent-blue/10 text-accent-blue rounded-xl text-xs font-bold hover:bg-accent-blue/20 transition-all"
-                    >
-                      Load More ({filteredApps.length - visibleApps.length} remaining)
-                    </button>
-                  </td>
-                </tr>
-              )}
               {filteredApps.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center border border-border-primary">
+                  <td colSpan={7} className="px-6 py-12 text-center border border-border-primary">
                     <div className="flex flex-col items-center gap-3 text-text-muted">
                       <FileText className="w-12 h-12 opacity-20" />
                       <p className="text-sm">No applications found in sheet.</p>

@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
 import { useToast } from '../contexts/ToastContext';
-import { subscribeToQuery, markNotificationAsRead } from '../services/storage';
+import { subscribeToCollection, subscribeToQuery, markNotificationAsRead } from '../services/storage';
 import { STAGES } from '../constants';
 import { TimeZoneClocks } from '../components/TimeZoneClocks';
 import { 
@@ -44,20 +43,15 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 export const Dashboard: React.FC = () => {
   const { user, isAuthReady } = useAuth();
   const { showToast } = useToast();
-  const { 
-    candidates, 
-    users: allUsers, 
-    applications, 
-    followUps, 
-    resumeRequests, 
-    interviewRequests: interviews, 
-    targetReductions: targetRequests, 
-    featureAnnouncements,
-    isDataReady 
-  } = useData();
-
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [followUps, setFollowUps] = useState<FollowUp[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const isLoading = !isDataReady;
+  const [resumeRequests, setResumeRequests] = useState<ResumeChangeRequest[]>([]);
+  const [interviews, setInterviews] = useState<InterviewSupportRequest[]>([]);
+  const [targetRequests, setTargetRequests] = useState<TargetReductionRequest[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [featureAnnouncements, setFeatureAnnouncements] = useState<FeatureAnnouncement[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [currentTime, setCurrentTime] = useState('');
@@ -65,6 +59,7 @@ export const Dashboard: React.FC = () => {
   const [dismissedAnnouncements, setDismissedAnnouncements] = useState<string[]>(JSON.parse(localStorage.getItem('dismissed_announcements') || '[]'));
   const [quotesList, setQuotesList] = useState<string[]>(DEFAULT_QUOTES);
   const [isThoughtsModalOpen, setIsThoughtsModalOpen] = useState(false);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
   const [isExporting, setIsExporting] = useState(false);
 
   // CRM Leads & Sales Graph Dashboard State Variables
@@ -282,16 +277,60 @@ export const Dashboard: React.FC = () => {
   }, [quotesList]);
 
   useEffect(() => {
-    if (!isAuthReady || !user) return;
+    if (!isAuthReady) return;
 
-    const q = query(
-      collection(db, 'jpc_notifications'),
-      where('recipient_id', '==', String(user.id))
-    );
-    const unsubNotifications = subscribeToQuery<Notification>(q, setNotifications, 'jpc_notifications');
+    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
+      setCandidates(data);
+      setIsLoading(false);
+    });
+
+    const unsubFollowUps = subscribeToCollection<FollowUp>('jpc_followups', (data) => {
+      setFollowUps(data);
+    });
+
+    let unsubNotifications = () => {};
+    if (user) {
+      const q = query(
+        collection(db, 'jpc_notifications'),
+        where('recipient_id', '==', String(user.id))
+      );
+      unsubNotifications = subscribeToQuery<Notification>(q, setNotifications, 'jpc_notifications');
+    }
+
+    const unsubResumeRequests = subscribeToCollection<ResumeChangeRequest>('jpc_resume_requests', (data) => {
+      setResumeRequests(data);
+    });
+
+    const unsubInterviews = subscribeToCollection<InterviewSupportRequest>('jpc_interview_requests', (data) => {
+      setInterviews(data);
+    });
+
+    const unsubTargetRequests = subscribeToCollection<TargetReductionRequest>('jpc_target_reductions', (data) => {
+      setTargetRequests(data);
+    });
+
+    const unsubApps = subscribeToCollection<Application>('jpc_applications', (data) => {
+      setApplications(data);
+    });
+
+    const unsubUsers = subscribeToCollection<User>('jpc_users', (data) => {
+      setAllUsers(data);
+    });
+
+    const unsubAnnouncements = subscribeToCollection<FeatureAnnouncement>('jpc_feature_announcements', (data) => {
+      setFeatureAnnouncements(data.filter(a => a.is_active));
+    });
 
     return () => {
+      unsubCandidates();
+      unsubFollowUps();
       unsubNotifications();
+      unsubResumeRequests();
+      unsubInterviews();
+      unsubTargetRequests();
+      unsubApps();
+      unsubUsers();
+      unsubAnnouncements();
     };
   }, [isAuthReady, user]);
 
@@ -431,7 +470,6 @@ export const Dashboard: React.FC = () => {
   const activeAnnouncements = useMemo(() => {
     if (!user) return [];
     return featureAnnouncements.filter(a => {
-      if (!a.is_active) return false;
       if (dismissedAnnouncements.includes(a.id)) return false;
       return a.target_teams === 'ALL' || (Array.isArray(a.target_teams) && a.target_teams.includes(user.role));
     });

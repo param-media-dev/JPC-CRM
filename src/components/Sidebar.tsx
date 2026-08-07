@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { motion, AnimatePresence } from 'motion/react';
@@ -22,7 +22,7 @@ import {
   TrendingUp
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { useData } from '../contexts/DataContext';
+import { subscribeToCollection } from '../services/storage';
 import { isProxyUser } from '../services/interviewService';
 import { FollowUp, Candidate, User } from '../types';
 import { canUserAccessCandidate } from '../lib/permissions';
@@ -33,10 +33,35 @@ interface SidebarProps {
   setIsOpen: (open: boolean) => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = React.memo(({ currentHash, isOpen, setIsOpen }) => {
-  const { user, logout } = useAuth();
+export const Sidebar: React.FC<SidebarProps> = ({ currentHash, isOpen, setIsOpen }) => {
+  const { user, logout, isAuthReady } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const { candidates: allCandidates, users: allUsers, followUps: allFollowUps } = useData();
+
+  const [allFollowUps, setAllFollowUps] = useState<FollowUp[]>([]);
+  const [allCandidates, setAllCandidates] = useState<Candidate[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+
+  useEffect(() => {
+    if (!isAuthReady) return;
+
+    const unsubFollowUps = subscribeToCollection<FollowUp>('jpc_followups', (data) => {
+      setAllFollowUps(data);
+    });
+
+    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
+      setAllCandidates(data);
+    });
+
+    const unsubUsers = subscribeToCollection<User>('jpc_users', (data) => {
+      setAllUsers(data);
+    });
+
+    return () => {
+      unsubFollowUps();
+      unsubCandidates();
+      unsubUsers();
+    };
+  }, [isAuthReady]);
 
   const followUpsCount = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
@@ -286,4 +311,4 @@ export const Sidebar: React.FC<SidebarProps> = React.memo(({ currentHash, isOpen
       </aside>
     </>
   );
-});
+};

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useData } from '../contexts/DataContext';
-import { generateId, addNotification } from '../services/storage';
+import { subscribeToCollection, generateId, addNotification } from '../services/storage';
 import { ResumeChangeRequest, Candidate, User } from '../types';
 import { 
   FileEdit, 
@@ -25,20 +24,12 @@ import { uploadFile, handleViewFile } from '../services/fileService';
 import { Upload, FileText, Loader2 } from 'lucide-react';
 
 export const ResumeLogBook: React.FC = () => {
-  const { user } = useAuth();
+  const { user, isAuthReady } = useAuth();
   const { showToast } = useToast();
-  const { 
-    resumeRequests: rawRequests, 
-    candidates, 
-    users: team, 
-    isDataReady 
-  } = useData();
-
-  const requests = useMemo(() => {
-    return [...rawRequests].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }, [rawRequests]);
-
-  const isLoading = !isDataReady;
+  const [requests, setRequests] = useState<ResumeChangeRequest[]>([]);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
+  const [team, setTeam] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isActionModalOpen, setIsActionModalOpen] = useState(false);
@@ -57,6 +48,24 @@ export const ResumeLogBook: React.FC = () => {
     candidate_id: '',
     details: ''
   });
+
+  useEffect(() => {
+    if (!isAuthReady) return;
+
+    const unsubRequests = subscribeToCollection<ResumeChangeRequest>('jpc_resume_requests', (data) => {
+      setRequests(data.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()));
+      setIsLoading(false);
+    });
+
+    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', setCandidates);
+    const unsubTeam = subscribeToCollection<User>('jpc_users', setTeam);
+
+    return () => {
+      unsubRequests();
+      unsubCandidates();
+      unsubTeam();
+    };
+  }, [isAuthReady]);
 
   const filteredRequests = useMemo(() => {
     return requests.filter(req => {
