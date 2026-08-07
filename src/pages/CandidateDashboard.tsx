@@ -18,7 +18,8 @@ import {
   Download,
   AlertCircle,
   ExternalLink,
-  ChevronRight
+  ChevronRight,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -47,6 +48,16 @@ export const CandidateDashboard: React.FC = () => {
   const [interviewRounds, setInterviewRounds] = useState<InterviewRound[]>([]);
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedJD, setSelectedJD] = useState<string | null>(null);
+
+  // Pagination for applications
+  const [appsPage, setAppsPage] = useState(1);
+  const appsPerPage = 10;
+  const paginatedApps = useMemo(() => {
+    const start = (appsPage - 1) * appsPerPage;
+    return applications.slice(start, start + appsPerPage);
+  }, [applications, appsPage]);
+  const totalAppPages = Math.ceil(applications.length / appsPerPage);
 
   useEffect(() => {
     if (!isAuthReady || !user?.candidate_id) return;
@@ -187,6 +198,38 @@ export const CandidateDashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* JD Modal */}
+      <AnimatePresence>
+        {selectedJD && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="bg-bg-secondary border border-border-primary rounded-3xl p-8 max-w-2xl w-full max-h-[80vh] overflow-y-auto custom-scrollbar shadow-2xl"
+            >
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xl font-bold text-text-primary">Job Description</h3>
+                <button onClick={() => setSelectedJD(null)} className="p-2 hover:bg-bg-tertiary rounded-xl transition-colors">
+                  <X className="w-5 h-5 text-text-secondary" />
+                </button>
+              </div>
+              <div className="prose prose-invert max-w-none">
+                <p className="text-text-secondary whitespace-pre-wrap leading-relaxed">{selectedJD}</p>
+              </div>
+              <div className="mt-8 flex justify-end">
+                <button 
+                  onClick={() => setSelectedJD(null)}
+                  className="px-6 py-2 bg-accent-blue text-white font-bold rounded-xl hover:bg-accent-blue/90 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Pipeline Progress */}
       <div className="bg-bg-secondary border border-border-primary rounded-3xl p-8 shadow-sm">
@@ -479,7 +522,7 @@ export const CandidateDashboard: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-border-primary/50">
-              {applications.slice(0, 10).map((app) => (
+              {paginatedApps.map((app) => (
                 <tr key={app.id} className="group hover:bg-bg-tertiary/30 transition-colors">
                   <td className="py-5 px-4">
                     <div>
@@ -522,6 +565,45 @@ export const CandidateDashboard: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {/* Applications Pagination */}
+        {totalAppPages > 1 && (
+          <div className="mt-8 flex items-center justify-between border-t border-border-primary pt-6">
+            <p className="text-xs text-text-muted">
+              Showing <span className="font-bold text-text-primary">{(appsPage - 1) * appsPerPage + 1}</span> to <span className="font-bold text-text-primary">{Math.min(appsPage * appsPerPage, applications.length)}</span> of <span className="font-bold text-text-primary">{applications.length}</span> results
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setAppsPage(p => Math.max(1, p - 1))}
+                disabled={appsPage === 1}
+                className="p-2 rounded-lg border border-border-primary text-text-primary hover:bg-bg-tertiary disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              >
+                <ChevronRight className="w-4 h-4 rotate-180" />
+              </button>
+              <div className="flex items-center gap-1">
+                {Array.from({ length: totalAppPages }, (_, i) => i + 1).map(page => (
+                  <button
+                    key={page}
+                    onClick={() => setAppsPage(page)}
+                    className={cn(
+                      "w-8 h-8 rounded-lg text-xs font-bold transition-all",
+                      appsPage === page ? "bg-accent-blue text-white" : "text-text-muted hover:bg-bg-tertiary"
+                    )}
+                  >
+                    {page}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => setAppsPage(p => Math.min(totalAppPages, p + 1))}
+                disabled={appsPage === totalAppPages}
+                className="p-2 rounded-lg border border-border-primary text-text-primary hover:bg-bg-tertiary disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Recent Activity & Interviews */}
@@ -566,16 +648,34 @@ export const CandidateDashboard: React.FC = () => {
                     <div>
                       <h4 className="text-sm font-bold text-text-primary">{interview.interview_company_name || interview.company_name}</h4>
                       <p className="text-xs text-text-secondary">{interview.job_title}</p>
+                      <div className="flex items-center gap-3 mt-1">
+                        <span className="text-[10px] text-text-muted flex items-center gap-1">
+                          <Clock className="w-3 h-3" /> {interview.timezone}
+                        </span>
+                        <span className="text-[10px] text-text-muted flex items-center gap-1">
+                          <TrendingUp className="w-3 h-3" /> {interview.interview_type.replace('_', ' ')}
+                        </span>
+                      </div>
                     </div>
                     <span className={cn(
                       "px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border",
                       interview.overall_status === 'confirmed' ? "bg-accent-green/10 text-accent-green border-accent-green/20" :
                       interview.overall_status === 'live' ? "bg-red-500/10 text-red-500 border-red-500/20 animate-pulse" :
+                      interview.overall_status === 'placed' ? "bg-accent-teal/10 text-accent-teal border-accent-teal/20" :
                       "bg-accent-blue/10 text-accent-blue border-accent-blue/20"
                     )}>
                       {interview.overall_status.replace('_', ' ')}
                     </span>
                   </div>
+
+                  {interview.notes && (
+                    <div className="p-3 bg-accent-blue/5 rounded-xl border border-accent-blue/10">
+                      <p className="text-[10px] text-text-secondary leading-relaxed">
+                        <span className="font-bold text-accent-blue uppercase mr-2">Note:</span>
+                        {interview.notes}
+                      </p>
+                    </div>
+                  )}
 
                   <div className="space-y-2">
                     {rounds.length > 0 ? rounds.map((round, idx) => (
@@ -599,14 +699,12 @@ export const CandidateDashboard: React.FC = () => {
                   </div>
 
                   <div className="flex gap-2">
-                    <a 
-                      href={interview.job_link}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button 
+                      onClick={() => interview.job_description ? setSelectedJD(interview.job_description) : window.open(interview.job_link, '_blank')}
                       className="flex-1 py-2 bg-bg-secondary border border-border-primary rounded-xl text-[10px] font-bold text-text-primary hover:bg-bg-tertiary transition-colors text-center"
                     >
                       View JD
-                    </a>
+                    </button>
                     {interview.application_link && (
                       <a 
                         href={interview.application_link}
