@@ -47,16 +47,28 @@ export const ProxyAssignmentModal: React.FC<ProxyAssignmentModalProps> = ({
   const [selectedSlot, setSelectedSlot] = useState<string>(round.booked_slot_time || '');
   const [selectedProxyId, setSelectedProxyId] = useState<string>('');
 
-  const startTime = selectedSlot ? selectedSlot.substring(11, 16) : '';
-  const endTime = selectedSlot ? (allAvailabilities.find(a => a.slot_start === selectedSlot)?.slot_end.substring(11, 16) || '') : '';
+  const [isManualTime, setIsManualTime] = useState(false);
+  const [manualStart, setManualStart] = useState(round.booked_slot_time ? round.booked_slot_time.substring(11, 16) : '');
+  const [manualEnd, setManualEnd] = useState(round.booked_slot_end ? round.booked_slot_end.substring(11, 16) : '');
+
+  const startTime = isManualTime ? manualStart : (selectedSlot ? selectedSlot.substring(11, 16) : '');
+  const endTime = isManualTime ? manualEnd : (selectedSlot ? (allAvailabilities.find(a => a.slot_start === selectedSlot)?.slot_end.substring(11, 16) || '') : '');
+
+  const isTimeRangeValid = useMemo(() => {
+    if (!startTime || !endTime) return true;
+    return startTime < endTime;
+  }, [startTime, endTime]);
 
   // Compute best proxy matching
   const assignmentResult = useMemo(() => {
-    if (!date || !startTime || !endTime) {
-      return { bestProxy: null, availableProxies: [], errors: ['Please input date, start time, and end time to calculate assignments.'] };
+    if (!date || !startTime || !endTime || !isTimeRangeValid) {
+      const errorMsg = !isTimeRangeValid 
+        ? 'End time must be after start time.' 
+        : 'Please input date, start time, and end time to calculate assignments.';
+      return { bestProxy: null, availableProxies: [], errors: [errorMsg] };
     }
     return findBestProxyForWindow(date, startTime, endTime, team, allRounds, allAvailabilities, allCalendarEvents, round.id);
-  }, [date, startTime, endTime, team, allRounds, allAvailabilities, allCalendarEvents, round.id]);
+  }, [date, startTime, endTime, team, allRounds, allAvailabilities, allCalendarEvents, round.id, isTimeRangeValid]);
 
   // Set initial selected proxy when assignmentResult changes
   useEffect(() => {
@@ -247,6 +259,16 @@ export const ProxyAssignmentModal: React.FC<ProxyAssignmentModalProps> = ({
 
           <div className="space-y-6">
             <div className="space-y-4 bg-bg-tertiary/40 p-5 rounded-3xl border border-border-primary/50">
+              <div className="flex items-center justify-between px-1">
+                <span className="text-[9px] font-black text-text-muted uppercase tracking-wider">Time Selection</span>
+                <button 
+                  onClick={() => setIsManualTime(!isManualTime)}
+                  className="text-[9px] font-bold text-accent-blue hover:underline uppercase"
+                >
+                  {isManualTime ? 'Use Presets' : 'Enter Manually'}
+                </button>
+              </div>
+
               <div className="space-y-1">
                 <span className="text-[9px] font-black text-text-muted uppercase tracking-wider block">Interview Date</span>
                 <input 
@@ -257,16 +279,39 @@ export const ProxyAssignmentModal: React.FC<ProxyAssignmentModalProps> = ({
                 />
               </div>
 
-              <div className="space-y-1">
-                <span className="text-[9px] font-black text-text-muted uppercase tracking-wider block">Available Time Slot</span>
-                <TimeSlotSelector
-                  value={selectedSlot}
-                  onChange={setSelectedSlot}
-                  availabilities={allAvailabilities}
-                  date={date}
-                  className="w-full"
-                />
-              </div>
+              {!isManualTime ? (
+                <div className="space-y-1">
+                  <span className="text-[9px] font-black text-text-muted uppercase tracking-wider block">Available Time Slot</span>
+                  <TimeSlotSelector
+                    value={selectedSlot}
+                    onChange={setSelectedSlot}
+                    availabilities={allAvailabilities}
+                    date={date}
+                    className="w-full"
+                  />
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <span className="text-[9px] font-black text-text-muted uppercase tracking-wider block">Start Time (EST)</span>
+                    <input 
+                      type="time"
+                      value={manualStart}
+                      onChange={e => setManualStart(e.target.value)}
+                      className="w-full bg-bg-secondary border border-border-primary rounded-xl text-xs p-2 font-bold text-text-primary focus:ring-1 focus:ring-accent-blue"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[9px] font-black text-text-muted uppercase tracking-wider block">End Time (EST)</span>
+                    <input 
+                      type="time"
+                      value={manualEnd}
+                      onChange={e => setManualEnd(e.target.value)}
+                      className="w-full bg-bg-secondary border border-border-primary rounded-xl text-xs p-2 font-bold text-text-primary focus:ring-1 focus:ring-accent-blue"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -381,7 +426,7 @@ export const ProxyAssignmentModal: React.FC<ProxyAssignmentModalProps> = ({
               </button>
               <button 
                 onClick={handleAssign}
-                disabled={!selectedProxyId || isSubmitting || isCheckingCalendar || !isSelectedProxyAvailable}
+                disabled={!selectedProxyId || isSubmitting || isCheckingCalendar || !isSelectedProxyAvailable || !isTimeRangeValid}
                 className="flex-1 py-4 bg-accent-blue text-white font-bold rounded-[20px] hover:bg-accent-blue/90 shadow-xl shadow-accent-blue/20 transition-all text-sm disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {isSubmitting && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
