@@ -164,25 +164,7 @@ export const ProxyAssignmentModal: React.FC<ProxyAssignmentModalProps> = ({
         overall_status: 'confirmed'
       });
 
-      // 3. Create Calendar Event and notification
-      const bufferStart = new Date(startD.getTime() - 15 * 60 * 1000).toISOString();
-      const bufferEnd = new Date(endD.getTime() + 15 * 60 * 1000).toISOString();
-
-      await addDoc(collection(db, 'jpc_calendar_events'), {
-        interview_round_id: round.id,
-        interview_request_id: request.id,
-        summary: `Interview Support: Candidate with ${request.interview_company_name} [${round.round_label}]`,
-        start_time: bookedStart,
-        end_time: bookedEnd,
-        reserved_start: bufferStart,
-        reserved_end: bufferEnd,
-        proxy_user_id: selectedProxy.id,
-        status: 'synced',
-        notifications_sent: true,
-        created_at: new Date().toISOString()
-      });
-
-      // Synchronize directly with proxy's real Google Calendar
+      // 3. Synchronize directly with proxy's real Google Calendar
       try {
         await syncInterviewRoundToGoogleCalendar(round.id, request.id, String(selectedProxy.id));
       } catch (calErr) {

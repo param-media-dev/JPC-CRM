@@ -175,7 +175,7 @@ export async function updateGoogleCalendarEvent(
 
     const resData = await response.json();
     console.log(`[CalendarService] Successfully updated Google Calendar event:`, resData.id);
-    return resData.htmlLink || resData.id;
+    return resData.id;
   } catch (error) {
     console.error('[CalendarService] Error in updateGoogleCalendarEvent:', error);
     return null;
@@ -275,7 +275,7 @@ export async function createGoogleCalendarEvent(
 
     const resData = await response.json();
     console.log(`[CalendarService] Successfully created Google Calendar event:`, resData.id);
-    return resData.htmlLink || resData.id;
+    return resData.id;
   } catch (error) {
     console.error('[CalendarService] Error in createGoogleCalendarEvent:', error);
     return null;
@@ -381,11 +381,21 @@ Contact Support: Coordinated via AI Auto Job Apply System.`;
     );
     const calendarEventsSnap = await getDocs(q);
     const existingSyncRecord = calendarEventsSnap.empty ? null : calendarEventsSnap.docs[0];
-    const existingEventId = existingSyncRecord?.data()?.google_event_id;
+    const existingSyncData = existingSyncRecord?.data();
+    const existingEventId = existingSyncData?.google_event_id;
+    const existingProxyId = existingSyncData?.proxy_user_id;
 
     let link: string | null | 'NOT_FOUND' = null;
     let recordToUpdate = existingSyncRecord;
-    if (existingEventId) {
+
+    // If proxy has changed, we MUST delete the event from the old proxy's calendar
+    if (existingEventId && existingProxyId && existingProxyId !== proxyUserId) {
+      console.log(`[CalendarService] Proxy changed from ${existingProxyId} to ${proxyUserId}. Deleting old event.`);
+      await deleteGoogleCalendarEvent(existingProxyId, existingEventId);
+      await deleteDoc(doc(db, 'jpc_calendar_events', existingSyncRecord!.id));
+      recordToUpdate = null;
+      link = await createGoogleCalendarEvent(proxyUserId, payload);
+    } else if (existingEventId) {
       link = await updateGoogleCalendarEvent(proxyUserId, existingEventId, payload);
       
       // If event was not found on Google, delete the local record and recreate in next sync

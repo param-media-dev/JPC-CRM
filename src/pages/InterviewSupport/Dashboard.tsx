@@ -1588,17 +1588,14 @@ const DirectScheduleModal: React.FC<{
       // Calendar events sync if proxy is assigned
       const assignedProxyId = round.proxy_user_id || request.proxy_user_id;
       if (assignedProxyId) {
-        const bufferStart = new Date(startD.getTime() - 15 * 60 * 1000).toISOString();
-        const bufferEnd = new Date(endD.getTime() + 15 * 60 * 1000).toISOString();
+        // Trigger Google Calendar integration API call
+        try {
+          await syncInterviewRoundToGoogleCalendar(round.id, request.id, String(assignedProxyId));
+        } catch (calErr) {
+          console.error('[DirectScheduleModal] Sync error:', calErr);
+        }
 
-        // Check if calendar event already exists
-        const calEventsQ = query(
-          collection(db, 'jpc_calendar_events'),
-          where('interview_round_id', '==', round.id)
-        );
-        const calEventsSnap = await getDocs(calEventsQ);
-
-        // Fetch candidate details
+        // Fetch candidate name for notification message
         let candidateName = 'Candidate';
         if (request.candidate_id) {
           try {
@@ -1607,38 +1604,8 @@ const DirectScheduleModal: React.FC<{
               candidateName = candDoc.data().full_name || 'Candidate';
             }
           } catch (e) {
-            console.error('Error fetching candidate Name:', e);
+            console.error('Error fetching candidate name:', e);
           }
-        }
-
-        const eventData = {
-          interview_round_id: round.id,
-          interview_request_id: request.id,
-          summary: `Interview Support: ${candidateName} at ${request.interview_company_name} [${round.round_label || 'Round'}]`,
-          start_time: bookedStart,
-          end_time: bookedEnd,
-          reserved_start: bufferStart,
-          reserved_end: bufferEnd,
-          proxy_user_id: assignedProxyId,
-          candidate_name: candidateName,
-          company_name: request.interview_company_name,
-          status: 'synced',
-          notifications_sent: true,
-          created_at: new Date().toISOString()
-        };
-
-        if (!calEventsSnap.empty) {
-          const existingEventId = calEventsSnap.docs[0].id;
-          await updateDoc(doc(db, 'jpc_calendar_events', existingEventId), eventData);
-        } else {
-          await addDoc(collection(db, 'jpc_calendar_events'), eventData);
-        }
-
-        // Trigger Google Calendar integration API call
-        try {
-          await syncInterviewRoundToGoogleCalendar(round.id, request.id, assignedProxyId);
-        } catch (calErr) {
-          console.error('[DirectScheduleModal] Sync error:', calErr);
         }
 
         // Notify proxy of the manual update
