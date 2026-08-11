@@ -363,6 +363,15 @@ export const RTRLogBook: React.FC = () => {
                       <h3 className="text-xl font-bold text-text-primary flex items-center gap-2">
                         <UserIcon className="w-5 h-5 text-accent-blue" />
                         {candidate?.full_name || 'Unknown Candidate'}
+                        {candidate?.resume_url && (
+                          <button 
+                            onClick={() => handleViewFile(candidate.resume_url || '', candidate.resume_filename || 'resume.pdf')}
+                            className="ml-2 p-1.5 bg-bg-tertiary hover:bg-bg-tertiary/80 rounded-lg transition-all group/resume"
+                            title="View Current Resume"
+                          >
+                            <FileText className="w-4 h-4 text-accent-blue group-hover/resume:scale-110 transition-transform" />
+                          </button>
+                        )}
                       </h3>
                       <p className="text-sm text-text-secondary mt-1 flex items-center gap-1">
                         Requested by <span className="font-bold text-text-primary">{recruiter?.display_name || 'Unknown Recruiter'}</span>
