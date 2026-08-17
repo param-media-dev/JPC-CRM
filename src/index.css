@@ -24,6 +24,7 @@
 }
 
 :root {
+  color-scheme: dark;
   --bg-primary: #0A0C10;
   --bg-secondary: #12151C;
   --bg-tertiary: #1A1E26;
@@ -34,6 +35,7 @@
 }
 
 :root[data-theme="light"] {
+  color-scheme: light;
   --bg-primary: #F8FAFC;
   --bg-secondary: #FFFFFF;
   --bg-tertiary: #F1F5F9;
@@ -41,6 +43,78 @@
   --text-primary: #0F172A;
   --text-secondary: #475569;
   --text-muted: #94A3B8;
+}
+
+/* ==========================================================================
+   Global Dropdown & Select Theming (Native & Custom Components)
+   ========================================================================== */
+
+/* Native select element theming */
+select {
+  color-scheme: dark;
+  background-color: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+:root[data-theme="light"] select {
+  color-scheme: light;
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+/* Native option and optgroup styling across all operating systems & browsers */
+option,
+optgroup {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+:root[data-theme="light"] option,
+:root[data-theme="light"] optgroup {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+option:checked {
+  background-color: var(--color-accent-blue);
+  color: #FFFFFF;
+}
+
+option:disabled {
+  color: var(--text-muted);
+  background-color: var(--bg-tertiary);
+}
+
+/* Global react-select theme fallback overrides */
+.react-select__menu,
+[class*="-menu"] {
+  background-color: var(--bg-secondary) !important;
+  color: var(--text-primary) !important;
+}
+
+.react-select__menu-list,
+[class*="-MenuList"] {
+  background-color: var(--bg-secondary) !important;
+}
+
+.react-select__option,
+[class*="-option"] {
+  color: var(--text-primary) !important;
+}
+
+.react-select__single-value,
+[class*="-singleValue"] {
+  color: var(--text-primary) !important;
+}
+
+.react-select__input,
+[class*="-Input"] {
+  color: var(--text-primary) !important;
+}
+
+.react-select__placeholder,
+[class*="-placeholder"] {
+  color: var(--text-muted) !important;
 }
 
 body {

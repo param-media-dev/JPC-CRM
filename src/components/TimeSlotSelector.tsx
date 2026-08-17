@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import Select from 'react-select';
 import { ProxyAvailability } from '../types';
-import { cn } from '../lib/utils';
+import { sharedSelectStyles } from '../lib/selectStyles';
 
 interface TimeSlot {
   value: string;
@@ -38,35 +38,13 @@ export const TimeSlotSelector: React.FC<TimeSlotSelectorProps> = ({ value, onCha
       .sort((a, b) => a.value.localeCompare(b.value));
   }, [availabilities, date, proxyUserId]);
 
-  const customStyles = {
-    control: (provided: any) => ({
-      ...provided,
-      backgroundColor: 'var(--bg-secondary)',
-      borderColor: 'var(--border-primary)',
-      borderRadius: '12px',
-      padding: '4px',
-      fontSize: '0.875rem',
-      boxShadow: 'none',
-    }),
-    menu: (provided: any) => ({
-      ...provided,
-      backgroundColor: 'var(--bg-secondary)',
-      borderRadius: '12px',
-    }),
-    option: (provided: any, state: any) => ({
-      ...provided,
-      backgroundColor: state.isSelected ? 'var(--color-accent-blue)' : state.isFocused ? 'rgba(0, 173, 140, 0.1)' : 'transparent',
-      color: state.isSelected ? '#fff' : 'var(--text-primary)',
-    }),
-  };
-
   return (
     <div className={className}>
       <Select
         options={options}
         value={options.find(o => o.value === value) || null}
         onChange={(opt) => onChange(opt ? opt.value : '')}
-        styles={customStyles}
+        styles={sharedSelectStyles}
         placeholder="Select time slot..."
         isClearable
       />

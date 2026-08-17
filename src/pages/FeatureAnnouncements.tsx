@@ -26,6 +26,7 @@ import {
 import { FeatureAnnouncement, Role } from '../types';
 import { cn } from '../lib/utils';
 import Select from 'react-select';
+import { sharedSelectStyles } from '../lib/selectStyles';
 
 const TEAM_OPTIONS = [
   { value: 'ALL', label: 'All Teams' },
@@ -379,9 +380,17 @@ const AnnouncementModal: React.FC<{
                   }
                 }}
                 styles={{
-                  ...customSelectStyles,
+                  ...sharedSelectStyles,
                   container: (base) => ({ ...base, borderRadius: '24px' }),
-                  control: (base) => ({ ...base, borderRadius: '24px', padding: '6px', backgroundColor: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)' })
+                  control: (base, state) => ({
+                    ...(typeof sharedSelectStyles.control === 'function' ? sharedSelectStyles.control(base, state) : base),
+                    borderRadius: '24px',
+                    padding: '6px',
+                  }),
+                  menu: (base, state) => ({
+                    ...(typeof sharedSelectStyles.menu === 'function' ? sharedSelectStyles.menu(base, state) : base),
+                    borderRadius: '20px',
+                  })
                 }}
               />
             </div>
@@ -416,45 +425,3 @@ const AnnouncementModal: React.FC<{
   );
 };
 
-const customSelectStyles = {
-  menu: (provided: any) => ({
-    ...provided,
-    backgroundColor: 'var(--bg-secondary)',
-    border: '1px solid var(--border-primary)',
-    borderRadius: '20px',
-    padding: '8px',
-    boxShadow: '0 10px 40px -10px rgba(0,0,0,0.5)',
-    zIndex: 100
-  }),
-  option: (provided: any, state: any) => ({
-    ...provided,
-    backgroundColor: state.isSelected ? 'var(--accent-blue)' : state.isFocused ? 'var(--bg-tertiary)' : 'transparent',
-    color: state.isSelected ? '#fff' : 'var(--text-primary)',
-    borderRadius: '12px',
-    cursor: 'pointer',
-    fontSize: '13px',
-    fontWeight: 'bold',
-    transition: 'all 0.2s'
-  }),
-  multiValue: (base: any) => ({
-    ...base,
-    backgroundColor: 'var(--accent-blue)',
-    borderRadius: '8px',
-    padding: '2px 4px'
-  }),
-  multiValueLabel: (base: any) => ({
-    ...base,
-    color: '#fff',
-    fontWeight: 'black',
-    fontSize: '10px',
-    textTransform: 'uppercase'
-  }),
-  multiValueRemove: (base: any) => ({
-    ...base,
-    color: '#fff',
-    ':hover': {
-      backgroundColor: 'rgba(255,255,255,0.2)',
-      color: '#fff'
-    }
-  })
-};

@@ -66,59 +66,22 @@ import { ProxyAssignmentModal } from '../../components/ProxyAssignmentModal';
 import { ResumeSubstitutionModal } from '../../components/ResumeSubstitutionModal';
 import { SlotVisualizer } from '../../components/SlotVisualizer';
 import { findBestProxyForWindow, isProxyUser } from '../../services/interviewService';
+import { sharedSelectStyles } from '../../lib/selectStyles';
 
 type TabType = 'today' | 'upcoming' | 'pending_bookings' | 'booked' | 'live' | 'completed' | 'cancelled' | 'rescheduled' | 'self_attended' | 'analytics' | 'team_status';
 
 const customSelectStyles = {
+  ...sharedSelectStyles,
   control: (provided: any, state: any) => ({
-    ...provided,
-    backgroundColor: 'var(--bg-tertiary)',
-    borderColor: state.isFocused ? 'var(--color-accent-blue)' : 'var(--border)',
+    ...(typeof sharedSelectStyles.control === 'function' ? sharedSelectStyles.control(provided, state) : provided),
     borderRadius: '20px',
     minHeight: '56px',
-    fontSize: '0.875rem',
-    boxShadow: 'none',
-    borderWidth: '1px',
     paddingLeft: '1rem',
-    '&:hover': {
-      borderColor: 'var(--color-accent-blue)'
-    }
   }),
-  menu: (provided: any) => ({
-    ...provided,
-    backgroundColor: 'var(--bg-secondary)',
-    border: '1px solid var(--border)',
+  menu: (provided: any, state: any) => ({
+    ...(typeof sharedSelectStyles.menu === 'function' ? sharedSelectStyles.menu(provided, state) : provided),
     borderRadius: '20px',
-    overflow: 'hidden',
-    zIndex: 100
   }),
-  option: (provided: any, state: any) => ({
-    ...provided,
-    backgroundColor: state.isSelected 
-      ? 'var(--color-accent-blue)' 
-      : state.isFocused 
-        ? 'rgba(0, 173, 140, 0.1)' 
-        : 'transparent',
-    color: state.isSelected ? '#FFFFFF' : 'var(--text-primary)',
-    cursor: 'pointer',
-    fontSize: '0.875rem',
-    padding: '12px 20px',
-    '&:active': {
-      backgroundColor: 'var(--color-accent-blue)'
-    }
-  }),
-  singleValue: (provided: any) => ({
-    ...provided,
-    color: 'var(--text-primary)'
-  }),
-  input: (provided: any) => ({
-    ...provided,
-    color: 'var(--text-primary)'
-  }),
-  placeholder: (provided: any) => ({
-    ...provided,
-    color: 'var(--text-muted)'
-  })
 };
 
 export const InterviewSupportDashboard: React.FC = () => {

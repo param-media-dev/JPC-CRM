@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Select from 'react-select';
+import { sharedSelectStyles } from '../lib/selectStyles';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn, getEasternDate, formatDisplayDate } from '../lib/utils';
 import { db } from '../firebase';
@@ -54,54 +55,7 @@ export const AppTracker: React.FC = () => {
     endDate: ''
   });
 
-  const customSelectStyles = {
-    control: (provided: any, state: any) => ({
-      ...provided,
-      backgroundColor: 'var(--bg-tertiary)',
-      borderColor: state.isFocused ? 'var(--color-accent-blue)' : 'var(--border)',
-      borderRadius: '1rem',
-      padding: '0.25rem 0.5rem',
-      fontSize: '0.875rem',
-      boxShadow: 'none',
-      '&:hover': {
-        borderColor: 'var(--color-accent-blue)'
-      }
-    }),
-    menu: (provided: any) => ({
-      ...provided,
-      backgroundColor: 'var(--bg-secondary)',
-      border: '1px solid var(--border)',
-      borderRadius: '1rem',
-      overflow: 'hidden',
-      zIndex: 50
-    }),
-    option: (provided: any, state: any) => ({
-      ...provided,
-      backgroundColor: state.isSelected 
-        ? 'var(--color-accent-blue)' 
-        : state.isFocused 
-          ? 'rgba(0, 173, 140, 0.1)' 
-          : 'transparent',
-      color: state.isSelected ? '#FFFFFF' : 'var(--text-primary)',
-      cursor: 'pointer',
-      fontSize: '0.875rem',
-      '&:active': {
-        backgroundColor: 'var(--color-accent-blue)'
-      }
-    }),
-    singleValue: (provided: any) => ({
-      ...provided,
-      color: 'var(--text-primary)'
-    }),
-    input: (provided: any) => ({
-      ...provided,
-      color: 'var(--text-primary)'
-    }),
-    placeholder: (provided: any) => ({
-      ...provided,
-      color: 'var(--text-muted)'
-    })
-  };
+  const customSelectStyles = sharedSelectStyles;
 
   const handleExportXLSX = () => {
     if (!exportFilters.candidateId) {
