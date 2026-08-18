@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Link as LinkIcon, Calendar, Send, AlertCircle, Clock, ExternalLink } from 'lucide-react';
 import { Candidate, Application } from '../types';
-import { generateId, logActivity } from '../services/storage';
+import { generateId, logActivity, handleFirestoreError, OperationType } from '../services/storage';
 import { db } from '../firebase';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, query, collection, where, onSnapshot } from 'firebase/firestore';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { cn, getEasternDate, formatDisplayDate } from '../lib/utils';
@@ -13,18 +13,19 @@ interface TrackJobSheetProps {
   candidate: Candidate | null;
   isOpen: boolean;
   onClose: () => void;
-  applications: Application[];
+  applications?: Application[]; // Optional now as we fetch internal
 }
 
 export const TrackJobSheet: React.FC<TrackJobSheetProps> = ({
   candidate,
   isOpen,
   onClose,
-  applications,
+  applications: externalApplications = [],
 }) => {
   const { user } = useAuth();
   const { showToast } = useToast();
 
+  const [internalApplications, setInternalApplications] = useState<Application[]>([]);
   const [jobLink, setJobLink] = useState('');
   const [jobTitle, setJobTitle] = useState('');
   const [companyName, setCompanyName] = useState('');
@@ -32,6 +33,34 @@ export const TrackJobSheet: React.FC<TrackJobSheetProps> = ({
   const [notes, setNotes] = useState('');
   const [appliedAt, setAppliedAt] = useState(getEasternDate());
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Fetch applications for the candidate specifically to ensure duplicate checks work
+  // and load remains small globally.
+  useEffect(() => {
+    if (!candidate?.id || !isOpen) {
+      setInternalApplications([]);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'jpc_applications'),
+      where('candidate_id', '==', candidate.id)
+    );
+
+    const unsub = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Application));
+      setInternalApplications(data);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `jpc_applications/candidate/${candidate.id}`);
+    });
+
+    return () => unsub();
+  }, [candidate?.id, isOpen]);
+
+  // Use either external (if provided and candidate matches) or internal apps
+  const applications = externalApplications.length > 0 && externalApplications[0].candidate_id === candidate?.id
+    ? externalApplications 
+    : internalApplications;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

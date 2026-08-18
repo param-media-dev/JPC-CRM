@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { subscribeToCollection, updateFollowUp, logActivity } from '../services/storage';
+import { subscribeToCollection, updateFollowUp, logActivity, handleFirestoreError, OperationType } from '../services/storage';
 import { STAGES } from '../constants';
 import { Clock, CheckCircle2, Calendar, User, ArrowRight, AlertCircle, Search, Filter } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { FollowUp, Candidate, Stage } from '../types';
 import { useDebounce } from '../lib/hooks';
+import { db } from '../firebase';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 
 export const FollowUps: React.FC = () => {
   const { user, isAuthReady } = useAuth();
@@ -18,22 +20,43 @@ export const FollowUps: React.FC = () => {
   const [filter, setFilter] = useState<'all' | 'pending' | 'done'>('pending');
 
   useEffect(() => {
-    if (!isAuthReady) return;
+    if (!isAuthReady || !user) return;
 
-    const unsubFollowUps = subscribeToCollection<FollowUp>('jpc_followups', (data) => {
+    // 1. Fetch Follow-ups (Filter by creator if not manager/admin)
+    let fQuery = query(collection(db, 'jpc_followups'));
+    
+    if (user.role !== 'administrator' && user.role !== 'jpc_sysadmin' && user.role !== 'jpc_manager') {
+      fQuery = query(fQuery, where('created_by', '==', String(user.id)));
+    }
+
+    const unsubFollowUps = onSnapshot(fQuery, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as FollowUp));
       setFollowUps(data);
       setIsLoading(false);
-    }, 1000);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'jpc_followups');
+    });
 
-    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
+    // 2. Fetch candidates assigned to user (or all if manager/admin)
+    let cQuery = query(collection(db, 'jpc_candidates'));
+    if (user.role === 'jpc_recruiter') {
+      cQuery = query(cQuery, where('assigned_recruiter', '==', String(user.id)));
+    } else if (user.role === 'jpc_marketing') {
+      cQuery = query(cQuery, where('assigned_marketing_leader', '==', String(user.id)));
+    }
+
+    const unsubCandidates = onSnapshot(cQuery, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Candidate));
       setCandidates(data);
-    }, 2000);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'jpc_candidates');
+    });
 
     return () => {
       unsubFollowUps();
       unsubCandidates();
     };
-  }, [isAuthReady]);
+  }, [isAuthReady, user?.id, user?.role]);
 
   const candidatesMap = useMemo(() => {
     const map = new Map<string, Candidate>();
@@ -44,9 +67,8 @@ export const FollowUps: React.FC = () => {
   const today = new Date().toISOString().split('T')[0];
 
   const filteredFollowUps = useMemo(() => {
-    let list = user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' 
-      ? followUps 
-      : followUps.filter(f => f.created_by === user?.id);
+    // Subscription already handles initial filtering by user
+    let list = followUps;
 
     if (filter === 'pending') list = list.filter(f => !f.done);
     if (filter === 'done') list = list.filter(f => f.done);

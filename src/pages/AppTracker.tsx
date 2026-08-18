@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { subscribeToCollection, generateId, logActivity } from '../services/storage';
+import { subscribeToCollection, subscribeToQuery, generateId, logActivity, handleFirestoreError, OperationType } from '../services/storage';
 import { Application, Candidate, User, Notification } from '../types';
 import { 
   FileText, 
@@ -23,8 +23,9 @@ import Select from 'react-select';
 import { sharedSelectStyles } from '../lib/selectStyles';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn, getEasternDate, formatDisplayDate } from '../lib/utils';
+import { useDebounce } from '../lib/hooks';
 import { db } from '../firebase';
-import { collection, doc, setDoc, query, where, getDocs, deleteDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, query, where, getDocs, deleteDoc, onSnapshot } from 'firebase/firestore';
 import { useToast } from '../contexts/ToastContext';
 import { CandidateSheet } from '../components/CandidateSheet';
 import { TrackJobSheet } from '../components/TrackJobSheet';
@@ -34,6 +35,8 @@ export const AppTracker: React.FC = () => {
   const { user, isAuthReady } = useAuth();
   const { showToast } = useToast();
   const [applications, setApplications] = useState<Application[]>([]);
+  const [todayApplications, setTodayApplications] = useState<Application[]>([]);
+  const [candidateApplications, setCandidateApplications] = useState<Application[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [team, setTeam] = useState<User[]>([]);
   const [reportLogs, setReportLogs] = useState<any[]>([]);
@@ -48,7 +51,10 @@ export const AppTracker: React.FC = () => {
   const [inlineJobLink, setInlineJobLink] = useState('');
   const [isInlineSubmitting, setIsInlineSubmitting] = useState(false);
   
+  const debouncedSearch = useDebounce(searchTerm, 300);
+  
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isExportLoading, setIsExportLoading] = useState(false);
   const [exportFilters, setExportFilters] = useState({
     candidateId: '',
     startDate: '',
@@ -57,7 +63,14 @@ export const AppTracker: React.FC = () => {
 
   const customSelectStyles = sharedSelectStyles;
 
-  const handleExportXLSX = () => {
+  // Merge applications for different views
+  useEffect(() => {
+    const allApps = [...todayApplications, ...candidateApplications];
+    const uniqueApps = Array.from(new Map(allApps.map(item => [item.id, item])).values());
+    setApplications(uniqueApps.sort((a, b) => new Date(b.applied_at).getTime() - new Date(a.applied_at).getTime()));
+  }, [todayApplications, candidateApplications]);
+
+  const handleExportXLSX = async () => {
     if (!exportFilters.candidateId) {
       showToast('Please select a candidate for export', 'error');
       return;
@@ -66,63 +79,99 @@ export const AppTracker: React.FC = () => {
     const candidate = candidates.find(c => c.id === exportFilters.candidateId);
     if (!candidate) return;
 
-    // Filter applications
-    let exportData = applications.filter(app => app.candidate_id === exportFilters.candidateId);
-    
-    if (exportFilters.startDate) {
-      exportData = exportData.filter(app => app.applied_at >= exportFilters.startDate);
-    }
-    if (exportFilters.endDate) {
-      exportData = exportData.filter(app => app.applied_at <= exportFilters.endDate);
-    }
-
-    if (exportData.length === 0) {
-      showToast('No data found for the selected filters', 'info');
-      return;
-    }
-
-    // Map to XLSX rows
-    const rows = exportData.map(app => {
-      const recruiter = team.find(u => u.id === app.recruiter_id);
+    setIsExportLoading(true);
+    try {
+      // For export, we need to ensure we have ALL applications for this candidate
+      // especially if they aren't the currently selected one or weren't applied today
+      let exportApps: Application[] = [];
       
-      return {
-        'Candidate Name': candidate.full_name,
-        'Recruiter Name': recruiter?.display_name || 'System',
-        'Job Link': app.job_link,
-        'Application Date': app.applied_at,
-        'Application Status': app.status || 'Applied'
-      };
-    });
+      const q = query(
+        collection(db, 'jpc_applications'),
+        where('candidate_id', '==', exportFilters.candidateId)
+      );
+      const snap = await getDocs(q);
+      exportApps = snap.docs.map(d => ({ ...d.data(), id: d.id } as Application));
 
-    // Generate workbook
-    const ws = XLSX.utils.json_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Applications');
+      // Filter applications
+      let exportData = exportApps;
+      
+      if (exportFilters.startDate) {
+        exportData = exportData.filter(app => app.applied_at >= exportFilters.startDate);
+      }
+      if (exportFilters.endDate) {
+        exportData = exportData.filter(app => app.applied_at <= exportFilters.endDate);
+      }
 
-    // Styling: Bold headers (limited support in basic xlsx but helps readability)
-    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
-    for (let C = range.s.c; C <= range.e.c; ++C) {
-      const address = XLSX.utils.encode_col(C) + '1';
-      if (!ws[address]) continue;
-      ws[address].s = { font: { bold: true } };
+      if (exportData.length === 0) {
+        showToast('No data found for the selected filters', 'info');
+        return;
+      }
+
+      // Map to XLSX rows
+      const rows = exportData.map(app => {
+        const recruiter = team.find(u => u.id === app.recruiter_id);
+        
+        return {
+          'Candidate Name': candidate.full_name,
+          'Recruiter Name': recruiter?.display_name || 'System',
+          'Job Link': app.job_link,
+          'Application Date': app.applied_at,
+          'Application Status': app.status || 'Applied'
+        };
+      });
+
+      // Generate workbook
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Applications');
+
+      // Download
+      XLSX.writeFile(wb, `${candidate.full_name}_Applications_${new Date().toISOString().split('T')[0]}.xlsx`);
+      showToast('XLSX report generated successfully', 'success');
+      setIsExportModalOpen(false);
+    } catch (err) {
+      console.error('Export error:', err);
+      showToast('Failed to export data', 'error');
+    } finally {
+      setIsExportLoading(false);
     }
-
-    // Download
-    XLSX.writeFile(wb, `${candidate.full_name}_Applications_${new Date().toISOString().split('T')[0]}.xlsx`);
-    showToast('XLSX report generated successfully', 'success');
-    setIsExportModalOpen(false);
   };
 
   useEffect(() => {
-    if (!isAuthReady) return;
+    if (!isAuthReady || !user) return;
 
-    const unsubApps = subscribeToCollection<Application>('jpc_applications', (data) => {
-      setApplications(data.sort((a, b) => new Date(b.applied_at).getTime() - new Date(a.applied_at).getTime()));
-      setIsLoading(false);
+    // 1. Fetch only active/interviewing candidates assigned to the user (or all if manager/admin)
+    let cQuery = query(
+      collection(db, 'jpc_candidates'),
+      where('current_stage', 'in', ['marketing_active', 'interviewing'])
+    );
+
+    if (user.role === 'jpc_recruiter') {
+      cQuery = query(cQuery, where('assigned_recruiter', '==', String(user.id)));
+    } else if (user.role === 'jpc_marketing') {
+      cQuery = query(cQuery, where('assigned_marketing_leader', '==', String(user.id)));
+    }
+
+    const unsubCandidates = onSnapshot(cQuery, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Candidate));
+      setCandidates(data);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'jpc_candidates');
     });
 
-    const unsubCandidates = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
-      setCandidates(data);
+    // 2. Fetch today's applications globally (or for user's assigned candidates) to keep stats accurate
+    const today = getEasternDate();
+    const todayQuery = query(
+      collection(db, 'jpc_applications'),
+      where('applied_at', '==', today)
+    );
+
+    const unsubTodayApps = onSnapshot(todayQuery, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Application));
+      setTodayApplications(data);
+      setIsLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'jpc_applications');
     });
 
     const unsubTeam = subscribeToCollection<User>('jpc_users', (data) => {
@@ -132,12 +181,34 @@ export const AppTracker: React.FC = () => {
     const unsubLogs = subscribeToCollection<any>('jpc_report_logs', setReportLogs);
 
     return () => {
-      unsubApps();
       unsubCandidates();
+      unsubTodayApps();
       unsubTeam();
       unsubLogs();
     };
-  }, [isAuthReady]);
+  }, [isAuthReady, user?.id, user?.role]);
+
+  // 3. Fetch applications for the selected candidate specifically
+  useEffect(() => {
+    if (!filterCandidateId) {
+      setCandidateApplications([]);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'jpc_applications'),
+      where('candidate_id', '==', filterCandidateId)
+    );
+
+    const unsub = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Application));
+      setCandidateApplications(data);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `jpc_applications/candidate/${filterCandidateId}`);
+    });
+
+    return () => unsub();
+  }, [filterCandidateId]);
 
   const filteredApps = useMemo(() => {
     return applications.filter(app => {
@@ -147,6 +218,7 @@ export const AppTracker: React.FC = () => {
       const candidate = candidates.find(c => c.id === app.candidate_id);
       
       // In Application Tracker show only Marketing Active and Interviewing profiles
+      // This is now enforced at the query level for candidates, but apps might refer to others if they were completed today
       if (candidate?.current_stage !== 'marketing_active' && candidate?.current_stage !== 'interviewing') return false;
       
       // Filter by assigned recruiter if user is a recruiter
@@ -156,9 +228,9 @@ export const AppTracker: React.FC = () => {
 
       const recruiter = team.find(u => u.id === app.recruiter_id);
       const searchStr = `${candidate?.full_name} ${recruiter?.display_name} ${app.job_link}`.toLowerCase();
-      return searchStr.includes(searchTerm.toLowerCase());
+      return searchStr.includes(debouncedSearch.toLowerCase());
     });
-  }, [applications, candidates, team, searchTerm, user, filterCandidateId]);
+  }, [applications, candidates, team, debouncedSearch, user, filterCandidateId]);
 
   const stats = useMemo(() => {
     const today = getEasternDate();
@@ -759,10 +831,15 @@ export const AppTracker: React.FC = () => {
                   </button>
                   <button 
                     onClick={handleExportXLSX}
-                    className="flex-1 py-4 px-6 bg-accent-blue text-white font-bold rounded-2xl hover:bg-accent-blue/90 transition-all shadow-lg shadow-accent-blue/20 flex items-center justify-center gap-2"
+                    disabled={isExportLoading}
+                    className="flex-1 py-4 px-6 bg-accent-blue text-white font-bold rounded-2xl hover:bg-accent-blue/90 transition-all shadow-lg shadow-accent-blue/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <Download className="w-5 h-5" />
-                    Download XLSX
+                    {isExportLoading ? (
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <Download className="w-5 h-5" />
+                    )}
+                    {isExportLoading ? 'Processing...' : 'Download XLSX'}
                   </button>
                 </div>
               </div>

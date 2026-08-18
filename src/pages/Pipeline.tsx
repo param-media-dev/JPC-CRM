@@ -8,6 +8,8 @@ import { cn } from '../lib/utils';
 import { Candidate, Stage, User } from '../types';
 import { useDebounce } from '../lib/hooks';
 import { canUserAccessCandidate } from '../lib/permissions';
+import { db } from '../firebase';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 
 export const Pipeline: React.FC = () => {
   const { user, isAuthReady } = useAuth();
@@ -19,12 +21,25 @@ export const Pipeline: React.FC = () => {
   const [entityFilter, setEntityFilter] = useState<'all' | 'sivium' | 'recruiter' | 'normal'>('all');
 
   useEffect(() => {
-    if (!isAuthReady) return;
-    // Limit collection subscription to 500 for the pipeline view to maintain performance
-    const unsub = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
+    if (!isAuthReady || !user) return;
+    
+    // 1. Fetch relevant candidates based on role
+    let cQuery = query(collection(db, 'jpc_candidates'));
+    
+    if (user.role === 'jpc_recruiter') {
+      cQuery = query(cQuery, where('assigned_recruiter', '==', String(user.id)));
+    } else if (user.role === 'jpc_marketing') {
+      cQuery = query(cQuery, where('assigned_marketing_leader', '==', String(user.id)));
+    }
+
+    const unsub = onSnapshot(cQuery, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Candidate));
       setCandidates(data.filter(c => c.current_stage !== 'not_interested' && c.current_stage !== 'not_eligible'));
       setIsLoading(false);
-    }, 500);
+    }, (error) => {
+      console.error('Pipeline candidates fetch error:', error);
+      setIsLoading(false);
+    });
 
     const unsubUsers = subscribeToCollection<User>('jpc_users', (data) => {
       setAllUsers(data);
@@ -34,7 +49,7 @@ export const Pipeline: React.FC = () => {
       unsub();
       unsubUsers();
     };
-  }, [isAuthReady]);
+  }, [isAuthReady, user?.id, user?.role]);
 
   const groupedCandidates = useMemo(() => {
     const groups: Record<string, Candidate[]> = {};

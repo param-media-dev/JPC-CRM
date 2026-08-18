@@ -1241,46 +1241,42 @@ app.get('/api/calendly/slots', async (req, res) => {
   }
 });
 
-async function setupProduction() {
-  const possibleDistPath = path.join(process.cwd(), 'dist');
-  const distPath = fs.existsSync(path.join(possibleDistPath, 'index.html')) 
-    ? possibleDistPath 
-    : process.cwd();
-  
-  app.use(express.static(distPath));
-  app.get('*all', (req, res) => {
-    const indexPath = path.join(distPath, 'index.html');
-    if (fs.existsSync(indexPath)) {
-      res.sendFile(indexPath);
-    } else {
-      res.status(404).send('index.html not found');
-    }
-  });
-}
-
-async function setupDevServer() {
-  try {
-    const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
+async function startServer() {
+  if (process.env.NODE_ENV === 'production') {
+    const possibleDistPath = path.join(process.cwd(), 'dist');
+    const distPath = fs.existsSync(path.join(possibleDistPath, 'index.html')) 
+      ? possibleDistPath 
+      : process.cwd();
+    
+    app.use(express.static(distPath));
+    app.get('*all', (req, res) => {
+      const indexPath = path.join(distPath, 'index.html');
+      if (fs.existsSync(indexPath)) {
+        res.sendFile(indexPath);
+      } else {
+        res.status(404).send('index.html not found');
+      }
     });
-    app.use(vite.middlewares);
-  } catch (err) {
-    console.error('Failed to import or set up Vite dev server:', err);
+  } else {
+    try {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: 'spa',
+      });
+      app.use(vite.middlewares);
+    } catch (err) {
+      console.error('Failed to import or set up Vite dev server:', err);
+    }
+  }
+
+  if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
   }
 }
 
-if (process.env.NODE_ENV === 'production') {
-  setupProduction();
-} else {
-  setupDevServer();
-}
-
-if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
-}
+startServer();
 
 export default app;

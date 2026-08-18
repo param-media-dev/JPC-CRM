@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { subscribeToCollection } from '../services/storage';
+import { subscribeToCollection, handleFirestoreError, OperationType } from '../services/storage';
 import { STAGES } from '../constants';
 import { Search, Filter, X, Package, Phone, Mail, MapPin, Calendar, Users, ChevronRight, MoreVertical, ShieldCheck, Plus, Send, Table, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -15,6 +15,8 @@ import { useDebounce } from '../lib/hooks';
 import { canUserAccessCandidate } from '../lib/permissions';
 import { List } from 'react-window';
 import * as XLSX from 'xlsx';
+import { db } from '../firebase';
+import { collection, query, where, getDocs, onSnapshot } from 'firebase/firestore';
 
 type CandidateRowExtraProps = {
   items: Candidate[];
@@ -133,10 +135,7 @@ export const Candidates: React.FC = () => {
   const { user, isAuthReady } = useAuth();
   const { showToast } = useToast();
   const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [allRawCandidates, setAllRawCandidates] = useState<Candidate[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
-  const [applications, setApplications] = useState<Application[]>([]);
-  const [followUps, setFollowUps] = useState<FollowUp[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebounce(search, 300);
@@ -151,34 +150,41 @@ export const Candidates: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   
   useEffect(() => {
-    if (!isAuthReady) return;
+    if (!isAuthReady || !user) return;
     
-    // Subscribe to candidates collection for role-wise filtering
-    const unsub = subscribeToCollection<Candidate>('jpc_candidates', (data) => {
-      setAllRawCandidates(data);
-      setCandidates(data.filter(c => c.current_stage !== 'not_interested' && c.current_stage !== 'not_eligible'));
+    // 1. Fetch only relevant candidates based on role to make load small
+    let cQuery = query(collection(db, 'jpc_candidates'));
+    
+    // For recruiters/marketing, strictly only fetch assigned candidates
+    if (user.role === 'jpc_recruiter') {
+      cQuery = query(cQuery, where('assigned_recruiter', '==', String(user.id)));
+    } else if (user.role === 'jpc_marketing') {
+      cQuery = query(cQuery, where('assigned_marketing_leader', '==', String(user.id)));
+    } else if (user.role === 'jpc_sales') {
+      cQuery = query(cQuery, where('assigned_sales', '==', String(user.id)));
+    } else if (user.role === 'jpc_cs') {
+      cQuery = query(cQuery, where('assigned_cs', '==', String(user.id)));
+    } else if (user.role === 'jpc_lead_gen') {
+      cQuery = query(cQuery, where('lead_generated_by', '==', String(user.id)));
+    }
+
+    const unsub = onSnapshot(cQuery, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Candidate));
+      setCandidates(data.filter(c => !c.deleted_at));
       setIsLoading(false);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'jpc_candidates');
     });
 
     const unsubUsers = subscribeToCollection<User>('jpc_users', (data) => {
       setAllUsers(data);
     }, 500);
 
-    const unsubApps = subscribeToCollection<Application>('jpc_applications', (data) => {
-      setApplications(data);
-    }, 1000);
-
-    const unsubFollowUps = subscribeToCollection<FollowUp>('jpc_followups', (data) => {
-      setFollowUps(data);
-    }, 1000);
-
     return () => {
       unsub();
       unsubUsers();
-      unsubApps();
-      unsubFollowUps();
     };
-  }, [isAuthReady]);
+  }, [isAuthReady, user?.id, user?.role]);
 
   // Get stage from URL if present
   useEffect(() => {
@@ -228,15 +234,21 @@ export const Candidates: React.FC = () => {
     onTrack: handleTrack
   }), [filteredCandidates, allUsers, user, handleSelect, handleTrack]);
 
-  const handleExportLeadsAndSales = () => {
-    // Export logic remains same but uses allRawCandidates
+  const handleExportLeadsAndSales = async () => {
     setIsExporting(true);
     try {
-      if (allRawCandidates.length === 0) {
+      if (candidates.length === 0) {
         showToast('No leads or sales data found to export', 'error');
         setIsExporting(false);
         return;
       }
+
+      // Fetch Applications and Follow-ups ON DEMAND for export to keep load small
+      const appsSnap = await getDocs(collection(db, 'jpc_applications'));
+      const apps = appsSnap.docs.map(d => d.data() as Application);
+
+      const followUpsSnap = await getDocs(collection(db, 'jpc_followups'));
+      const followUps = followUpsSnap.docs.map(d => d.data() as FollowUp);
 
       const cleanExcelValue = (val: any): string | number => {
         if (val === undefined || val === null) return '—';
@@ -251,7 +263,7 @@ export const Candidates: React.FC = () => {
         return str;
       };
 
-      const dataRows = allRawCandidates.map(c => {
+      const dataRows = candidates.map(c => {
         const candidateFollowUps = followUps.filter(f => f.candidate_id === c.id);
         const hasActiveFollowUp = candidateFollowUps.some(f => !f.done);
         
@@ -269,7 +281,7 @@ export const Candidates: React.FC = () => {
         const recruiterUser = allUsers.find(u => String(u.id) === String(c.assigned_recruiter));
         const marketingUser = allUsers.find(u => String(u.id) === String(c.assigned_marketing_leader));
         
-        const totalApps = applications.filter(a => a.candidate_id === c.id).length;
+        const totalApps = apps.filter(a => a.candidate_id === c.id).length;
 
         return {
           'Lead ID': c.id,
@@ -456,7 +468,7 @@ export const Candidates: React.FC = () => {
           setIsTrackSheetOpen(false);
           setTrackingCandidate(null);
         }}
-        applications={applications}
+        applications={[]} // Now handled inside TrackJobSheet
       />
 
       <BulkImportModal
