@@ -5,7 +5,7 @@ import { useToast } from '../contexts/ToastContext';
 import { Application, Candidate } from '../types';
 import { generateId, logActivity, handleFirestoreError, OperationType } from '../services/storage';
 import { db } from '../firebase';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, query, collection, where, onSnapshot } from 'firebase/firestore';
 import { getEasternDate, cn } from '../lib/utils';
 import { 
   Link as LinkIcon, 
@@ -131,7 +131,7 @@ export const BulkLinkImportModal: React.FC<BulkLinkImportModalProps> = ({
   isOpen,
   onClose,
   candidate,
-  existingApplications,
+  existingApplications: externalApplications,
   onSuccess
 }) => {
   const { user } = useAuth();
@@ -139,11 +139,40 @@ export const BulkLinkImportModal: React.FC<BulkLinkImportModalProps> = ({
   
   // Wizard states
   const [mode, setMode] = useState<'input' | 'review' | 'importing' | 'completed'>('input');
+  const [internalApplications, setInternalApplications] = useState<Application[]>([]);
   const [linksText, setLinksText] = useState('');
   const [parsedLinks, setParsedLinks] = useState<ParsedLink[]>([]);
   const [progress, setProgress] = useState(0);
   const [successCount, setSuccessCount] = useState(0);
   const [failCount, setFailCount] = useState(0);
+
+  // Fetch applications for the candidate specifically to ensure duplicate checks work
+  // even if the parent page hasn't loaded full history.
+  React.useEffect(() => {
+    if (!candidate?.id || !isOpen) {
+      setInternalApplications([]);
+      return;
+    }
+
+    const q = query(
+      collection(db, 'jpc_applications'),
+      where('candidate_id', '==', candidate.id)
+    );
+
+    const unsub = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Application));
+      setInternalApplications(data);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, `jpc_applications/candidate/${candidate.id}`);
+    });
+
+    return () => unsub();
+  }, [candidate?.id, isOpen]);
+
+  // Use either external (if provided and candidate matches) or internal apps
+  const existingApplications = externalApplications.length > 0 && externalApplications[0].candidate_id === candidate?.id
+    ? externalApplications 
+    : internalApplications;
 
   // Parse list of raw links
   const handleAnalyze = () => {

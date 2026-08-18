@@ -35,11 +35,8 @@ export const AppTracker: React.FC = () => {
   const { user, isAuthReady } = useAuth();
   const { showToast } = useToast();
   const [applications, setApplications] = useState<Application[]>([]);
-  const [todayApplications, setTodayApplications] = useState<Application[]>([]);
-  const [candidateApplications, setCandidateApplications] = useState<Application[]>([]);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [team, setTeam] = useState<User[]>([]);
-  const [reportLogs, setReportLogs] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCandidate, setSelectedCandidate] = useState<Candidate | null>(null);
@@ -62,13 +59,6 @@ export const AppTracker: React.FC = () => {
   });
 
   const customSelectStyles = sharedSelectStyles;
-
-  // Merge applications for different views
-  useEffect(() => {
-    const allApps = [...todayApplications, ...candidateApplications];
-    const uniqueApps = Array.from(new Map(allApps.map(item => [item.id, item])).values());
-    setApplications(uniqueApps.sort((a, b) => new Date(b.applied_at).getTime() - new Date(a.applied_at).getTime()));
-  }, [todayApplications, candidateApplications]);
 
   const handleExportXLSX = async () => {
     if (!exportFilters.candidateId) {
@@ -140,6 +130,8 @@ export const AppTracker: React.FC = () => {
   useEffect(() => {
     if (!isAuthReady || !user) return;
 
+    console.log('[AppTracker] INITIAL LOAD - candidates only');
+
     // 1. Fetch only active/interviewing candidates assigned to the user (or all if manager/admin)
     let cQuery = query(
       collection(db, 'jpc_candidates'),
@@ -155,45 +147,35 @@ export const AppTracker: React.FC = () => {
     const unsubCandidates = onSnapshot(cQuery, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Candidate));
       setCandidates(data);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.GET, 'jpc_candidates');
-    });
-
-    // 2. Fetch today's applications globally (or for user's assigned candidates) to keep stats accurate
-    const today = getEasternDate();
-    const todayQuery = query(
-      collection(db, 'jpc_applications'),
-      where('applied_at', '==', today)
-    );
-
-    const unsubTodayApps = onSnapshot(todayQuery, (snapshot) => {
-      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Application));
-      setTodayApplications(data);
       setIsLoading(false);
     }, (error) => {
-      handleFirestoreError(error, OperationType.GET, 'jpc_applications');
+      handleFirestoreError(error, OperationType.GET, 'jpc_candidates');
+      setIsLoading(false);
     });
 
-    const unsubTeam = subscribeToCollection<User>('jpc_users', (data) => {
+    const unsubTeam = onSnapshot(query(collection(db, 'jpc_users')), (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as User));
       setTeam(data);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.GET, 'jpc_users');
     });
-
-    const unsubLogs = subscribeToCollection<any>('jpc_report_logs', setReportLogs);
 
     return () => {
       unsubCandidates();
-      unsubTodayApps();
       unsubTeam();
-      unsubLogs();
     };
   }, [isAuthReady, user?.id, user?.role]);
 
-  // 3. Fetch applications for the selected candidate specifically
+  // 2. Fetch applications ONLY for the selected candidate specifically
   useEffect(() => {
     if (!filterCandidateId) {
-      setCandidateApplications([]);
+      setApplications([]);
       return;
     }
+
+    console.log('[AppTracker] SELECTED CANDIDATE:', filterCandidateId);
+    console.log('[AppTracker] Loading application data for:', filterCandidateId);
+    console.log('[AppTracker] FIRESTORE APPLICATION QUERY');
 
     const q = query(
       collection(db, 'jpc_applications'),
@@ -202,19 +184,21 @@ export const AppTracker: React.FC = () => {
 
     const unsub = onSnapshot(q, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Application));
-      setCandidateApplications(data);
+      setApplications(data.sort((a, b) => new Date(b.applied_at).getTime() - new Date(a.applied_at).getTime()));
     }, (error) => {
       handleFirestoreError(error, OperationType.GET, `jpc_applications/candidate/${filterCandidateId}`);
     });
 
-    return () => unsub();
+    return () => {
+      console.log('[AppTracker] Cleaning up application listener for candidate:', filterCandidateId);
+      unsub();
+    };
   }, [filterCandidateId]);
 
   const filteredApps = useMemo(() => {
-    return applications.filter(app => {
-      // Priority filter by selected candidate
-      if (filterCandidateId && app.candidate_id !== filterCandidateId) return false;
+    if (!filterCandidateId) return [];
 
+    return applications.filter(app => {
       const candidate = candidates.find(c => c.id === app.candidate_id);
       
       // In Application Tracker show only Marketing Active and Interviewing profiles
@@ -234,11 +218,16 @@ export const AppTracker: React.FC = () => {
 
   const stats = useMemo(() => {
     const today = getEasternDate();
+    
+    // Total today is only calculated if we have data for a selected candidate
     const todayApps = applications.filter(a => a.applied_at === today);
     
-    // Calculate candidate-wise progress for assigned candidates
+    // Calculate candidate-wise progress ONLY for the selected candidate if one exists
     const candidateProgress = candidates
       .filter(c => {
+        // Only show progress for selected candidate if filter is active
+        if (filterCandidateId && c.id !== filterCandidateId) return false;
+        
         if (user?.role === 'jpc_recruiter') {
           return String(c.assigned_recruiter) === String(user.id);
         } else if (user?.role === 'jpc_marketing') {
@@ -262,10 +251,10 @@ export const AppTracker: React.FC = () => {
       });
 
     return {
-      totalToday: todayApps.length,
+      totalToday: filterCandidateId ? todayApps.length : 0,
       candidateProgress
     };
-  }, [applications, team, candidates, user]);
+  }, [applications, team, candidates, user, filterCandidateId]);
 
   // My candidates filter
   const myCandidates = useMemo(() => {
@@ -503,7 +492,7 @@ export const AppTracker: React.FC = () => {
             ))}
             {stats.candidateProgress.length === 0 && (
               <div className="col-span-full py-8 text-center text-text-muted text-sm italic">
-                No candidates assigned to track.
+                {filterCandidateId ? 'No active candidate progress to display.' : 'Select a candidate above to view target progress.'}
               </div>
             )}
           </div>
