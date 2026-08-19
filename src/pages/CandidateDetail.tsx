@@ -89,7 +89,7 @@ export const CandidateDetail: React.FC = () => {
   const canManagePayments = !isCandidate && !isLeadGen;
   const canManageFollowUps = !isCandidate && !isLeadGen;
   const canManageRemarks = !isCandidate && !isLeadGen;
-  const canManageAgreement = user?.role === 'jpc_cs' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager';
+  const canManageAgreement = user?.role === 'jpc_cs' || user?.role === 'jpc_compliance_person' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager';
   const canDelete = user?.role === 'administrator' || user?.role === 'jpc_sysadmin';
 
   const [candidate, setCandidate] = useState<Candidate | null>(null);
@@ -238,7 +238,7 @@ export const CandidateDetail: React.FC = () => {
   }, [candidate, id, user]);
 
   const salesUsers = allUsers.filter(u => u.role === 'jpc_sales');
-  const csUsers = allUsers.filter(u => u.role === 'jpc_cs');
+  const csUsers = allUsers.filter(u => u.role === 'jpc_cs' || u.role === 'jpc_compliance_person');
   const resumeUsers = allUsers.filter(u => u.role === 'jpc_resume' && !u.is_on_leave);
   const marketingLeaders = allUsers.filter(u => u.role === 'jpc_marketing' && !u.is_on_leave);
   const marketingUsers = allUsers.filter(u => (u.role === 'jpc_marketing_support' || u.role === 'jpc_marketing') && !u.is_on_leave);
@@ -2051,10 +2051,10 @@ export const CandidateDetail: React.FC = () => {
                   </div>
                   {(!isLeadGen || isSalesperson) && (
                     <div className="space-y-1">
-                      <label className="text-[10px] font-bold text-text-muted uppercase">Assigned CS</label>
+                      <label className="text-[10px] font-bold text-text-muted uppercase">Assigned Compliance</label>
                       <select value={packageForm.assigned_cs || ''} onChange={e => setPackageForm({...packageForm, assigned_cs: e.target.value})} className="w-full bg-bg-tertiary border border-border-primary rounded-lg px-3 py-2 text-sm">
-                        <option value="">Select CS</option>
-                        {csUsers.map(u => <option key={u.id} value={u.id}>{u.display_name}</option>)}
+                        <option value="">Select Compliance</option>
+                        {csUsers.map(u => <option key={u.id} value={u.id}>{u.display_name} ({u.role === 'jpc_cs' ? 'Compliance Head' : 'Compliance Person'})</option>)}
                       </select>
                     </div>
                   )}
@@ -2163,7 +2163,7 @@ export const CandidateDetail: React.FC = () => {
                   </div>
                   {(!isLeadGen || isSalesperson) && (
                     <div className="space-y-1">
-                      <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">CS Representative</p>
+                      <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest">Compliance</p>
                       <p className="text-text-primary font-medium">{allUsers.find(u => u.id === candidate.assigned_cs)?.display_name || '—'}</p>
                     </div>
                   )}
@@ -2203,7 +2203,7 @@ export const CandidateDetail: React.FC = () => {
                 </div>
               )}
 
-              {candidate.package_name && candidate.package_name.toLowerCase().includes('support') && (user?.role === 'jpc_cs' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager') && (
+              {candidate.package_name && candidate.package_name.toLowerCase().includes('support') && (user?.role === 'jpc_cs' || user?.role === 'jpc_compliance_person' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager') && (
                 <div className="mt-6 p-4 bg-accent-blue/5 border border-accent-blue/20 rounded-xl space-y-2">
                   <div className="flex items-center gap-2 text-xs font-black text-accent-blue uppercase tracking-wider">
                     <span>⚡</span> Live Interview Support Package
@@ -2233,7 +2233,7 @@ export const CandidateDetail: React.FC = () => {
           </section>
 
           {/* Payments */}
-          {(user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter' || isSalesperson) && (
+          {(user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_compliance_person' || user?.role === 'jpc_recruiter' || isSalesperson) && (
             <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
               <div className="px-6 py-4 border-b border-border-primary flex items-center justify-between">
                 <h3 className="font-bold text-text-primary flex items-center gap-2">
@@ -2561,7 +2561,7 @@ export const CandidateDetail: React.FC = () => {
           </section>
 
           {/* QC Checklist */}
-          {(user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs') && !isSalesperson && (
+          {(user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_compliance_person') && !isSalesperson && (
             <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
               <div className="px-6 py-4 border-b border-border-primary flex items-center justify-between">
                 <h3 className="font-bold text-text-primary flex items-center gap-2">
@@ -2609,7 +2609,7 @@ export const CandidateDetail: React.FC = () => {
           )}
 
           {/* Follow-Ups */}
-          {(user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter' || isSalesperson) && (
+          {(user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_compliance_person' || user?.role === 'jpc_recruiter' || isSalesperson) && (
             <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
               <div className="px-6 py-4 border-b border-border-primary">
                 <h3 className="font-bold text-text-primary flex items-center gap-2">
@@ -2669,7 +2669,7 @@ export const CandidateDetail: React.FC = () => {
           )}
 
           {/* Remarks Section */}
-          {(user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_recruiter' || isSalesperson) && (
+          {(user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_compliance_person' || user?.role === 'jpc_recruiter' || isSalesperson) && (
             <section className="bg-bg-secondary border border-border-primary rounded-2xl overflow-hidden shadow-sm">
               <div className="px-6 py-4 border-b border-border-primary flex items-center justify-between">
                 <h3 className="font-bold text-text-primary flex items-center gap-2">
@@ -2737,6 +2737,7 @@ export const CandidateDetail: React.FC = () => {
                           user?.role === 'jpc_sysadmin' || 
                           user?.role === 'jpc_manager' || 
                           user?.role === 'jpc_cs' || 
+                          user?.role === 'jpc_compliance_person' ||
                           String(int.recruiter_id) === String(user?.id) || 
                           String(int.created_by) === String(user?.id)
                         ) && (

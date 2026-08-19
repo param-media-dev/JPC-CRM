@@ -54,9 +54,20 @@ export function canUserAccessCandidate(candidate: Candidate, user: User | null, 
     return userMatches(candidate.assigned_sales) || userMatches(candidate.lead_generated_by);
   }
 
-  // 3. Customer Support (CS): assigned CS or assigned sales
-  if (user.role === 'jpc_cs') {
-    return userMatches(candidate.assigned_cs) || userMatches(candidate.assigned_sales);
+  // 3. Compliance Head & Compliance Person: assigned CS or assigned sales
+  if (user.role === 'jpc_cs' || user.role === 'jpc_compliance_person') {
+    if (userMatches(candidate.assigned_cs) || userMatches(candidate.assigned_sales)) return true;
+    if (user.role === 'jpc_cs' && candidate.assigned_cs && teamUsers.length > 0) {
+      const isMyPerson = teamUsers.some(u => 
+        (String(u.leader_id) === String(user.id) || userMatches(u.leader_id)) &&
+        (String(u.id) === String(candidate.assigned_cs) || String(u.username) === String(candidate.assigned_cs))
+      );
+      if (isMyPerson) return true;
+    }
+    if (user.role === 'jpc_compliance_person' && user.leader_id) {
+      if (String(candidate.assigned_cs) === String(user.leader_id) || userMatches(candidate.assigned_cs)) return true;
+    }
+    return false;
   }
 
   // 4. Resume Team: assigned resume member

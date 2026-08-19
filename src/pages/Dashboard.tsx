@@ -381,7 +381,7 @@ export const Dashboard: React.FC = () => {
 
   const pendingResumeRequests = useMemo(() => {
     if (user?.role === 'jpc_marketing') return resumeRequests.filter(r => r.status === 'pending_tl');
-    if (user?.role === 'jpc_cs') return resumeRequests.filter(r => r.status === 'pending_cs');
+    if (user?.role === 'jpc_cs' || user?.role === 'jpc_compliance_person') return resumeRequests.filter(r => r.status === 'pending_cs');
     if (user?.role === 'jpc_resume') return resumeRequests.filter(r => r.status === 'pending_resume_team');
     return [];
   }, [resumeRequests, user]);
@@ -402,12 +402,12 @@ export const Dashboard: React.FC = () => {
       return interviews.filter(i => activeStatuses.includes(i.overall_status));
     }
     
-    if (user?.role === 'jpc_cs' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_recruiter') {
+    if (user?.role === 'jpc_cs' || user?.role === 'jpc_compliance_person' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_recruiter') {
       let filtered = interviews.filter(i => activeStatuses.includes(i.overall_status));
       
       if (user?.role === 'jpc_recruiter') {
         filtered = filtered.filter(i => i.recruiter_id === user.id);
-      } else if (user?.role === 'jpc_cs') {
+      } else if (user?.role === 'jpc_cs' || user?.role === 'jpc_compliance_person') {
         filtered = filtered.filter(i => i.cs_id === user.id || !i.cs_id);
       }
       
@@ -418,7 +418,7 @@ export const Dashboard: React.FC = () => {
   }, [interviews, user]);
 
   const pendingTargetRequests = useMemo(() => {
-    if (user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs') {
+    if (user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_compliance_person') {
       return targetRequests.filter(r => r.status === 'pending');
     }
     
@@ -489,7 +489,7 @@ export const Dashboard: React.FC = () => {
   ];
 
   const targetAlerts = useMemo(() => {
-    if (user?.role !== 'administrator' && user?.role !== 'jpc_sysadmin' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_cs') return [];
+    if (user?.role !== 'administrator' && user?.role !== 'jpc_sysadmin' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_cs' && user?.role !== 'jpc_compliance_person') return [];
     
     const todayStr = getEasternDate();
     const alerts: { candidate: Candidate, count: number, target: number }[] = [];
@@ -497,7 +497,7 @@ export const Dashboard: React.FC = () => {
     // Only check candidates in marketing/interview stages
     const marketingCandidates = candidates.filter(c => {
       const isMarketingStage = ['marketing_active', 'interviewing'].includes(c.current_stage);
-      if (user?.role === 'jpc_cs') {
+      if (user?.role === 'jpc_cs' || user?.role === 'jpc_compliance_person') {
         return isMarketingStage && String(c.assigned_cs) === String(user.id);
       }
       return isMarketingStage;
@@ -1025,7 +1025,7 @@ export const Dashboard: React.FC = () => {
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
-                            {(user?.role === 'jpc_cs' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager') && (
+                            {(user?.role === 'jpc_cs' || user?.role === 'jpc_compliance_person' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager') && (
                               <>
                                 <button 
                                   onClick={async () => {

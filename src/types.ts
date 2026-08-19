@@ -5,6 +5,7 @@ export type Role =
   | 'jpc_lead_gen'
   | 'jpc_sales'
   | 'jpc_cs'
+  | 'jpc_compliance_person'
   | 'jpc_resume'
   | 'jpc_marketing'
   | 'jpc_marketing_support'

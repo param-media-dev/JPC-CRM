@@ -20,7 +20,8 @@ const ROLES: { value: UserRole; label: string; icon: any; color: string }[] = [
   { value: 'jpc_manager', label: 'Auriic Manager', icon: Shield, color: 'text-accent-purple' },
   { value: 'jpc_lead_gen', label: 'Lead Generation', icon: UserPlus, color: 'text-accent-amber' },
   { value: 'jpc_sales', label: 'Sales Team', icon: UserCheck, color: 'text-accent-blue' },
-  { value: 'jpc_cs', label: 'Customer Success', icon: UserCheck, color: 'text-accent-teal' },
+  { value: 'jpc_cs', label: 'Compliance Head', icon: ShieldCheck, color: 'text-accent-teal' },
+  { value: 'jpc_compliance_person', label: 'Compliance Person', icon: UserCheck, color: 'text-accent-teal' },
   { value: 'jpc_resume', label: 'Resume Team', icon: UserCheck, color: 'text-accent-amber' },
   { value: 'jpc_recruiter', label: 'Recruiter', icon: UserCheck, color: 'text-accent-green' },
   { value: 'jpc_marketing', label: 'Marketing Leader (TL)', icon: Shield, color: 'text-accent-gray' },
@@ -85,6 +86,13 @@ export const Team: React.FC = () => {
       return team;
     }
     
+    if (user.role === 'jpc_compliance_person') {
+      return team.filter(u => 
+        u.id === user.id || 
+        (user.leader_id && (String(u.id) === String(user.leader_id) || String(u.leader_id) === String(user.leader_id)))
+      );
+    }
+    
     const mohitUser = team.find(u => u.username === 'mohit.panchal' || u.email === 'mohit.panchal@auriic.co');
     const isFaiz = (user.role as string) === 'jpc_cs' && (user.username === 'care' || String(user.display_name).toLowerCase().includes('faiz'));
     if (isFaiz && mohitUser) {
@@ -101,6 +109,13 @@ export const Team: React.FC = () => {
     if (user?.role === 'administrator' || user?.role === 'jpc_sysadmin') return true;
     if (user?.role === 'jpc_manager' && targetRole !== 'administrator' && targetRole !== 'jpc_sysadmin') return true;
     
+    // Compliance Head (jpc_cs) can manage their junior Compliance Persons
+    if (user?.role === 'jpc_cs') {
+      if (targetRole === 'jpc_compliance_person') {
+        if (!targetUser || !targetUser.leader_id || String(targetUser.leader_id) === String(user.id)) return true;
+      }
+    }
+
     // Faiz (jpc_cs) can manage Mohit's team members and Mohit himself
     const isFaiz = user?.role === 'jpc_cs' && (user.username === 'care' || String(user.display_name).toLowerCase().includes('faiz'));
     if (isFaiz && targetUser) {
@@ -160,7 +175,7 @@ export const Team: React.FC = () => {
             display_name: formData.display_name,
             email: email,
             role: formData.role,
-            leader_id: formData.role === 'jpc_recruiter' ? formData.leader_id : null,
+            leader_id: (formData.role === 'jpc_recruiter' || formData.role === 'jpc_compliance_person') ? formData.leader_id : null,
             candidate_id: formData.role === 'jpc_candidate' ? formData.candidate_id : null,
             is_on_leave: formData.is_on_leave || false,
             created_at: new Date().toISOString(),
@@ -194,7 +209,7 @@ export const Team: React.FC = () => {
                 username: formData.username,
                 display_name: formData.display_name,
                 role: formData.role,
-                leader_id: formData.role === 'jpc_recruiter' ? formData.leader_id : null,
+                leader_id: (formData.role === 'jpc_recruiter' || formData.role === 'jpc_compliance_person') ? formData.leader_id : null,
                 candidate_id: formData.role === 'jpc_candidate' ? formData.candidate_id : null,
               };
 
@@ -228,7 +243,7 @@ export const Team: React.FC = () => {
           display_name: formData.display_name,
           email: email,
           role: formData.role,
-          leader_id: formData.role === 'jpc_recruiter' ? formData.leader_id : null,
+          leader_id: (formData.role === 'jpc_recruiter' || formData.role === 'jpc_compliance_person') ? formData.leader_id : null,
           candidate_id: formData.role === 'jpc_candidate' ? formData.candidate_id : null,
           is_on_leave: formData.is_on_leave || false,
         };
@@ -316,6 +331,7 @@ export const Team: React.FC = () => {
     const mohitUser = team.find(u => u.username === 'mohit.panchal' || u.email === 'mohit.panchal@auriic.co');
     const isFaiz = user?.role === 'jpc_cs' && (user.username === 'care' || String(user.display_name).toLowerCase().includes('faiz'));
     const isTL = (user?.role === 'jpc_marketing' && String(targetUser.leader_id) === String(user.id)) ||
+                 (user?.role === 'jpc_cs' && String(targetUser.leader_id) === String(user.id)) ||
                  (isFaiz && mohitUser && (String(targetUser.leader_id) === String(mohitUser.id) || String(targetUser.leader_id) === String(user.id) || targetUser.id === mohitUser.id));
 
     if (!isAdmin && !isTL) {
@@ -762,6 +778,16 @@ export const Team: React.FC = () => {
                             TL: {team.find(u => String(u.id) === String(member.leader_id))?.display_name || 'Unknown'}
                           </p>
                         )}
+                        {member.role === 'jpc_compliance_person' && member.leader_id && (
+                          <p className="text-[10px] font-bold text-accent-teal uppercase mt-2">
+                            Compliance Head: {team.find(u => String(u.id) === String(member.leader_id))?.display_name || 'Unknown'}
+                          </p>
+                        )}
+                        {member.role === 'jpc_cs' && (
+                          <p className="text-[10px] font-bold text-accent-teal uppercase mt-2">
+                            Compliance Team: {team.filter(u => String(u.leader_id) === String(member.id)).length} Compliance Person{team.filter(u => String(u.leader_id) === String(member.id)).length === 1 ? '' : 's'}
+                          </p>
+                        )}
                         {member.role === 'jpc_marketing' && (
                           <p className="text-[10px] font-bold text-accent-green uppercase mt-2">
                             Cluster: {team.filter(u => String(u.leader_id) === String(member.id)).length} Recruiters
@@ -781,6 +807,7 @@ export const Team: React.FC = () => {
                             const mohitUser = team.find(u => u.username === 'mohit.panchal' || u.email === 'mohit.panchal@auriic.co');
                             const isFaiz = user?.role === 'jpc_cs' && (user.username === 'care' || String(user.display_name).toLowerCase().includes('faiz'));
                             const isTL = (user?.role === 'jpc_marketing' && String(member.leader_id) === String(user.id)) ||
+                                         (user?.role === 'jpc_cs' && String(member.leader_id) === String(user.id)) ||
                                          (isFaiz && mohitUser && (String(member.leader_id) === String(mohitUser.id) || String(member.leader_id) === String(user.id) || member.id === mohitUser.id));
                             const canToggle = user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || isTL;
                             return canToggle && member.id !== user?.id && (
@@ -953,6 +980,22 @@ export const Team: React.FC = () => {
                 >
                   <option value="">Select Marketing Leader</option>
                   {team.filter(u => u.role === 'jpc_marketing').map(u => (
+                    <option key={u.id} value={u.id}>{u.display_name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {formData.role === 'jpc_compliance_person' && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-text-muted uppercase tracking-widest">Compliance Head (Leader)</label>
+                <select 
+                  value={formData.leader_id || ''}
+                  onChange={e => setFormData({...formData, leader_id: e.target.value})}
+                  className="w-full bg-bg-tertiary border border-border-primary rounded-xl px-4 py-3 text-sm text-text-primary focus:outline-none focus:border-accent-blue transition-colors appearance-none"
+                  required
+                >
+                  <option value="">Select Compliance Head</option>
+                  {team.filter(u => u.role === 'jpc_cs').map(u => (
                     <option key={u.id} value={u.id}>{u.display_name}</option>
                   ))}
                 </select>
