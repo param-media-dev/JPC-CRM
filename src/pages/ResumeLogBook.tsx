@@ -67,6 +67,34 @@ export const ResumeLogBook: React.FC = () => {
     };
   }, [isAuthReady]);
 
+  const availableCandidates = useMemo(() => {
+    if (
+      user?.role === 'administrator' || 
+      user?.role === 'jpc_sysadmin' || 
+      user?.role === 'jpc_manager'
+    ) {
+      return candidates;
+    }
+    if (user?.role === 'jpc_cs' || user?.role === 'jpc_compliance_person') {
+      const assigned = candidates.filter(c => 
+        String(c.assigned_cs) === String(user.id) || 
+        (user.role === 'jpc_compliance_person' && user.leader_id && String(c.assigned_cs) === String(user.leader_id))
+      );
+      return assigned.length > 0 ? assigned : candidates;
+    }
+    if (user?.role === 'jpc_marketing') {
+      const assigned = candidates.filter(c => 
+        String(c.assigned_marketing_leader) === String(user.id) || 
+        String(c.assigned_marketing) === String(user.id)
+      );
+      return assigned.length > 0 ? assigned : candidates;
+    }
+    if (user?.role === 'jpc_recruiter') {
+      return candidates.filter(c => String(c.assigned_recruiter) === String(user.id));
+    }
+    return candidates;
+  }, [candidates, user]);
+
   const filteredRequests = useMemo(() => {
     return requests.filter(req => {
       const candidate = candidates.find(c => c.id === req.candidate_id);
@@ -97,7 +125,20 @@ export const ResumeLogBook: React.FC = () => {
     const cand = candidates.find(c => c.id === formData.candidate_id);
     const isMohitTeam = (cand && (String(cand.assigned_marketing_leader) === String(mohitUser?.id) || String(cand.assigned_marketing_leader) === String(faizUser?.id))) || 
                         (user && (String(user.leader_id) === String(mohitUser?.id) || String(user.leader_id) === String(faizUser?.id)));
-    const initialStatus = isMohitTeam ? 'pending_cs' : 'pending_tl';
+    
+    let initialStatus: ResumeChangeRequest['status'] = 'pending_tl';
+    if (
+      user?.role === 'jpc_cs' || 
+      user?.role === 'administrator' || 
+      user?.role === 'jpc_sysadmin' || 
+      user?.role === 'jpc_manager'
+    ) {
+      initialStatus = 'pending_resume_team';
+    } else if (isMohitTeam || user?.role === 'jpc_compliance_person') {
+      initialStatus = 'pending_cs';
+    } else {
+      initialStatus = 'pending_tl';
+    }
 
     const newRequest: ResumeChangeRequest = {
       id,
@@ -113,21 +154,37 @@ export const ResumeLogBook: React.FC = () => {
       await setDoc(doc(db, 'jpc_resume_requests', id), newRequest);
       
       const marketingTL = team.find(u => u.role === 'jpc_marketing');
-      const faizUser = team.find(u => u.username === 'care' || String(u.display_name).toLowerCase().includes('faiz'));
-      const recipientId = isMohitTeam ? (faizUser?.id || marketingTL?.id) : marketingTL?.id;
+      const resumeUser = team.find(u => u.role === 'jpc_resume');
+      const csUser = team.find(u => u.role === 'jpc_cs');
+      
+      let recipientId: string | number | undefined = marketingTL?.id;
+      if (initialStatus === 'pending_resume_team') {
+        recipientId = resumeUser?.id || marketingTL?.id;
+      } else if (initialStatus === 'pending_cs') {
+        recipientId = faizUser?.id || csUser?.id || marketingTL?.id;
+      }
 
       if (recipientId) {
         await addNotification({
           recipient_id: recipientId,
           sender_id: user?.id || null,
           type: 'resume_request',
-          message: isMohitTeam
+          message: initialStatus === 'pending_resume_team'
+            ? `New resume change request for candidate ${candidates.find(c => c.id === newRequest.candidate_id)?.full_name || 'Unknown'} submitted directly to Resume Team`
+            : isMohitTeam
             ? `New resume request for candidate ${candidates.find(c => c.id === newRequest.candidate_id)?.full_name || 'Unknown'} (Bypassed TL to Faiz)`
             : `New resume request for candidate ${candidates.find(c => c.id === newRequest.candidate_id)?.full_name || 'Unknown'}`
         });
       }
 
-      showToast(isMohitTeam ? 'Resume change request submitted directly to Faiz (CS)' : 'Resume change request submitted to Marketing TL', 'success');
+      showToast(
+        initialStatus === 'pending_resume_team'
+          ? 'Resume change request submitted directly to Resume Team'
+          : isMohitTeam 
+          ? 'Resume change request submitted directly to Faiz (CS)' 
+          : 'Resume change request submitted to Marketing TL', 
+        'success'
+      );
       setIsAddModalOpen(false);
       setFormData({ candidate_id: '', details: '' });
     } catch (error) {
@@ -237,9 +294,9 @@ export const ResumeLogBook: React.FC = () => {
         updated_at: new Date().toISOString() 
       };
       
-      if (user?.role === 'jpc_marketing' && notes) updateData.tl_notes = notes;
-      if (user?.role === 'jpc_cs' && notes) updateData.cs_notes = notes;
-      if (user?.role === 'jpc_resume') {
+      if ((user?.role === 'jpc_marketing' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager') && notes && newStatus !== 'pending_resume_team') updateData.tl_notes = notes;
+      if ((user?.role === 'jpc_cs' || user?.role === 'jpc_compliance_person' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager') && notes) updateData.cs_notes = notes;
+      if (user?.role === 'jpc_resume' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager') {
         if (notes) updateData.resume_team_notes = notes;
         if (resumeUrl) updateData.new_resume_url = resumeUrl;
         if (resumeBase64) updateData.resume_base64 = resumeBase64;
@@ -294,6 +351,15 @@ export const ResumeLogBook: React.FC = () => {
     );
   }
 
+  const canCreateRequest = 
+    user?.role === 'administrator' || 
+    user?.role === 'jpc_sysadmin' || 
+    user?.role === 'jpc_manager' || 
+    user?.role === 'jpc_cs' || 
+    user?.role === 'jpc_compliance_person' || 
+    user?.role === 'jpc_recruiter' || 
+    user?.role === 'jpc_marketing';
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -303,7 +369,7 @@ export const ResumeLogBook: React.FC = () => {
           <p className="text-text-secondary mt-1">Track and manage resume modification requests.</p>
         </div>
         <div className="flex items-center gap-3">
-          {(user?.role === 'jpc_recruiter' || user?.role === 'jpc_marketing') && (
+          {canCreateRequest && (
             <button 
               onClick={() => setIsAddModalOpen(true)}
               className="flex items-center gap-2 px-6 py-3 bg-accent-blue text-white font-bold rounded-2xl hover:bg-accent-blue/90 transition-all shadow-lg shadow-accent-blue/20"
@@ -478,7 +544,7 @@ export const ResumeLogBook: React.FC = () => {
                     })()}
 
                     {/* CS Actions */}
-                    {user?.role === 'jpc_cs' && req.status === 'pending_cs' && (
+                    {(user?.role === 'jpc_cs' || user?.role === 'jpc_compliance_person' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager') && req.status === 'pending_cs' && (
                       <>
                         <button 
                           onClick={() => openActionModal(req.id, candidate?.full_name || 'Candidate', 'cs_forward')}
@@ -498,7 +564,7 @@ export const ResumeLogBook: React.FC = () => {
                     )}
 
                     {/* Resume Team Actions */}
-                    {user?.role === 'jpc_resume' && req.status === 'pending_resume_team' && (
+                    {(user?.role === 'jpc_resume' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager') && req.status === 'pending_resume_team' && (
                       <>
                         <button 
                           onClick={() => openActionModal(req.id, candidate?.full_name || 'Candidate', 'resume_complete')}
@@ -572,7 +638,7 @@ export const ResumeLogBook: React.FC = () => {
               <div className="flex items-center justify-between mb-8">
                 <div>
                   <h2 className="text-2xl font-bold text-text-primary tracking-tight">Request Resume Change</h2>
-                  <p className="text-text-secondary text-sm mt-1">Submit your request to the Marketing TL.</p>
+                  <p className="text-text-secondary text-sm mt-1">Submit your resume change request.</p>
                 </div>
                 <button 
                   onClick={() => setIsAddModalOpen(false)}
@@ -592,12 +658,9 @@ export const ResumeLogBook: React.FC = () => {
                     required
                   >
                     <option value="">Choose a candidate...</option>
-                    {candidates
-                      .filter(c => String(c.assigned_recruiter) === String(user?.id))
-                      .map(c => (
-                        <option key={c.id} value={c.id}>{c.full_name}</option>
-                      ))
-                    }
+                    {availableCandidates.map(c => (
+                      <option key={c.id} value={c.id}>{c.full_name}</option>
+                    ))}
                   </select>
                 </div>
 

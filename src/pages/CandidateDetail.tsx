@@ -927,7 +927,20 @@ export const CandidateDetail: React.FC = () => {
       const faizUser = allUsers.find(u => u.username === 'care' || String(u.display_name).toLowerCase().includes('faiz'));
       const isMohitTeam = (candidate && (String(candidate.assigned_marketing_leader) === String(mohitUser?.id) || String(candidate.assigned_marketing_leader) === String(faizUser?.id))) || 
                           (user && (String(user.leader_id) === String(mohitUser?.id) || String(user.leader_id) === String(faizUser?.id)));
-      const initialStatus = isMohitTeam ? 'pending_cs' : 'pending_tl';
+      
+      let initialStatus: ResumeChangeRequest['status'] = 'pending_tl';
+      if (
+        user?.role === 'jpc_cs' || 
+        user?.role === 'administrator' || 
+        user?.role === 'jpc_sysadmin' || 
+        user?.role === 'jpc_manager'
+      ) {
+        initialStatus = 'pending_resume_team';
+      } else if (isMohitTeam || user?.role === 'jpc_compliance_person') {
+        initialStatus = 'pending_cs';
+      } else {
+        initialStatus = 'pending_tl';
+      }
 
       const newRequest: ResumeChangeRequest = {
         id: requestId,
@@ -941,15 +954,26 @@ export const CandidateDetail: React.FC = () => {
 
       await setDoc(doc(db, 'jpc_resume_requests', requestId), newRequest);
       
-      // Notify TL or CS
-      const recipientId = isMohitTeam ? (faizUser?.id || String(candidate?.assigned_marketing_leader)) : String(candidate?.assigned_marketing_leader);
+      // Notify TL, CS, or Resume Team
+      const marketingTL = allUsers.find(u => u.role === 'jpc_marketing');
+      const resumeUser = allUsers.find(u => u.role === 'jpc_resume');
+      const csUser = allUsers.find(u => u.role === 'jpc_cs');
+      
+      let recipientId: string | number | undefined = candidate?.assigned_marketing_leader || marketingTL?.id;
+      if (initialStatus === 'pending_resume_team') {
+        recipientId = resumeUser?.id || candidate?.assigned_marketing_leader || marketingTL?.id;
+      } else if (initialStatus === 'pending_cs') {
+        recipientId = faizUser?.id || csUser?.id || candidate?.assigned_marketing_leader || marketingTL?.id;
+      }
 
       if (recipientId) {
         await addNotification({
           recipient_id: String(recipientId),
           sender_id: user?.id || null,
           type: 'resume_request',
-          message: isMohitTeam
+          message: initialStatus === 'pending_resume_team'
+            ? `Resume Patching requested for ${candidate?.full_name} submitted directly to Resume Team`
+            : isMohitTeam
             ? `Resume Patching requested for ${candidate?.full_name} (TL Bypassed to Faiz)`
             : `Resume Patching requested for ${candidate?.full_name} by ${user?.display_name}`
         });
@@ -958,7 +982,14 @@ export const CandidateDetail: React.FC = () => {
       await logActivity(candidate!.id, 'Resume Patching Requested', `Details: ${patchingDetails}${isMohitTeam ? ' (Bypassed TL approval for Mohit Team to Faiz)' : ''}`, user?.id || null);
       setIsResumePatchingModalOpen(false);
       setPatchingDetails('');
-      showToast(isMohitTeam ? 'Resume patching request forwarded directly to Faiz (CS)' : 'Resume patching request submitted to TL', 'success');
+      showToast(
+        initialStatus === 'pending_resume_team'
+          ? 'Resume patching request submitted directly to Resume Team'
+          : isMohitTeam 
+          ? 'Resume patching request forwarded directly to Faiz (CS)' 
+          : 'Resume patching request submitted to TL', 
+        'success'
+      );
     } catch (error) {
       console.error('Patching request error:', error);
       showToast('Failed to submit patching request', 'error');
@@ -1557,7 +1588,7 @@ export const CandidateDetail: React.FC = () => {
                 ) : null}
                 {(canEditResume || isSalesperson) && (
                   <div className="flex items-center gap-2">
-                    {user?.role === 'jpc_recruiter' && (
+                    {(user?.role === 'jpc_recruiter' || user?.role === 'jpc_marketing' || user?.role === 'jpc_cs' || user?.role === 'jpc_compliance_person' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager') && (
                       <button 
                         onClick={() => setIsResumePatchingModalOpen(true)}
                         className="flex items-center gap-2 px-4 py-2 bg-accent-purple text-white font-bold rounded-xl hover:bg-accent-purple/90 transition-all text-xs shadow-md shadow-accent-purple/10"

@@ -68,6 +68,34 @@ export const RTRLogBook: React.FC = () => {
     };
   }, [isAuthReady]);
 
+  const availableCandidates = useMemo(() => {
+    if (
+      user?.role === 'administrator' || 
+      user?.role === 'jpc_sysadmin' || 
+      user?.role === 'jpc_manager'
+    ) {
+      return candidates;
+    }
+    if (user?.role === 'jpc_cs' || user?.role === 'jpc_compliance_person') {
+      const assigned = candidates.filter(c => 
+        String(c.assigned_cs) === String(user.id) || 
+        (user.role === 'jpc_compliance_person' && user.leader_id && String(c.assigned_cs) === String(user.leader_id))
+      );
+      return assigned.length > 0 ? assigned : candidates;
+    }
+    if (user?.role === 'jpc_marketing') {
+      const assigned = candidates.filter(c => 
+        String(c.assigned_marketing_leader) === String(user.id) || 
+        String(c.assigned_marketing) === String(user.id)
+      );
+      return assigned.length > 0 ? assigned : candidates;
+    }
+    if (user?.role === 'jpc_recruiter') {
+      return candidates.filter(c => String(c.assigned_recruiter) === String(user.id));
+    }
+    return candidates;
+  }, [candidates, user]);
+
   const filteredRequests = useMemo(() => {
     return requests.filter(req => {
       const candidate = candidates.find(c => c.id === req.candidate_id);
@@ -98,7 +126,20 @@ export const RTRLogBook: React.FC = () => {
     const cand = candidates.find(c => c.id === formData.candidate_id);
     const isMohitTeam = (cand && (String(cand.assigned_marketing_leader) === String(mohitUser?.id) || String(cand.assigned_marketing_leader) === String(faizUser?.id))) || 
                         (user && (String(user.leader_id) === String(mohitUser?.id) || String(user.leader_id) === String(faizUser?.id)));
-    const initialStatus = isMohitTeam ? 'pending_cs' : 'pending_tl';
+    
+    let initialStatus: RTRRequest['status'] = 'pending_tl';
+    if (
+      user?.role === 'jpc_cs' || 
+      user?.role === 'administrator' || 
+      user?.role === 'jpc_sysadmin' || 
+      user?.role === 'jpc_manager'
+    ) {
+      initialStatus = 'pending_rtr_team';
+    } else if (isMohitTeam || user?.role === 'jpc_compliance_person') {
+      initialStatus = 'pending_cs';
+    } else {
+      initialStatus = 'pending_tl';
+    }
 
     const newRequest: RTRRequest = {
       id,
@@ -114,21 +155,37 @@ export const RTRLogBook: React.FC = () => {
       await setDoc(doc(db, 'jpc_rtr_requests', id), newRequest);
       
       const marketingTL = team.find(u => u.role === 'jpc_marketing');
-      const faizUser = team.find(u => u.username === 'care' || String(u.display_name).toLowerCase().includes('faiz'));
-      const recipientId = isMohitTeam ? (faizUser?.id || marketingTL?.id) : marketingTL?.id;
+      const rtrUser = team.find(u => u.role === 'jpc_resume');
+      const csUser = team.find(u => u.role === 'jpc_cs');
+
+      let recipientId: string | number | undefined = marketingTL?.id;
+      if (initialStatus === 'pending_rtr_team') {
+        recipientId = rtrUser?.id || marketingTL?.id;
+      } else if (initialStatus === 'pending_cs') {
+        recipientId = faizUser?.id || csUser?.id || marketingTL?.id;
+      }
 
       if (recipientId) {
         await addNotification({
           recipient_id: recipientId,
           sender_id: user?.id || null,
           type: 'rtr_request',
-          message: isMohitTeam
+          message: initialStatus === 'pending_rtr_team'
+            ? `New RTR request for candidate ${candidates.find(c => c.id === newRequest.candidate_id)?.full_name || 'Unknown'} submitted directly to RTR Team`
+            : isMohitTeam
             ? `New RTR request for candidate ${candidates.find(c => c.id === newRequest.candidate_id)?.full_name || 'Unknown'} (Bypassed TL to Faiz)`
             : `New RTR request for candidate ${candidates.find(c => c.id === newRequest.candidate_id)?.full_name || 'Unknown'}`
         });
       }
 
-      showToast(isMohitTeam ? 'RTR request submitted directly to Faiz (CS)' : 'RTR change request submitted to Marketing TL', 'success');
+      showToast(
+        initialStatus === 'pending_rtr_team'
+          ? 'RTR request submitted directly to RTR Team'
+          : isMohitTeam 
+          ? 'RTR request submitted directly to Faiz (CS)' 
+          : 'RTR change request submitted to Marketing TL', 
+        'success'
+      );
       setIsAddModalOpen(false);
       setFormData({ candidate_id: '', details: '' });
     } catch (error) {
@@ -225,9 +282,9 @@ export const RTRLogBook: React.FC = () => {
         updated_at: new Date().toISOString() 
       };
       
-      if (user?.role === 'jpc_marketing' && notes) updateData.tl_notes = notes;
-      if (user?.role === 'jpc_cs' && notes) updateData.cs_notes = notes;
-      if (user?.role === 'jpc_resume') {
+      if ((user?.role === 'jpc_marketing' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager') && notes && newStatus !== 'pending_rtr_team') updateData.tl_notes = notes;
+      if ((user?.role === 'jpc_cs' || user?.role === 'jpc_compliance_person' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager') && notes) updateData.cs_notes = notes;
+      if (user?.role === 'jpc_resume' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager') {
         if (notes) updateData.rtr_team_notes = notes;
         if (rtrUrl) updateData.new_rtr_url = rtrUrl;
         if (rtrBase64) updateData.rtr_base64 = rtrBase64;
@@ -282,6 +339,15 @@ export const RTRLogBook: React.FC = () => {
     );
   }
 
+  const canCreateRequest = 
+    user?.role === 'administrator' || 
+    user?.role === 'jpc_sysadmin' || 
+    user?.role === 'jpc_manager' || 
+    user?.role === 'jpc_cs' || 
+    user?.role === 'jpc_compliance_person' || 
+    user?.role === 'jpc_recruiter' || 
+    user?.role === 'jpc_marketing';
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -290,7 +356,7 @@ export const RTRLogBook: React.FC = () => {
           <p className="text-text-secondary mt-1">Track and manage RTR modification requests.</p>
         </div>
         <div className="flex items-center gap-3">
-          {(user?.role === 'jpc_recruiter' || user?.role === 'jpc_marketing') && (
+          {canCreateRequest && (
             <button 
               onClick={() => setIsAddModalOpen(true)}
               className="flex items-center gap-2 px-6 py-3 bg-accent-blue text-white font-bold rounded-2xl hover:bg-accent-blue/90 transition-all shadow-lg shadow-accent-blue/20"
@@ -462,7 +528,8 @@ export const RTRLogBook: React.FC = () => {
                       );
                     })()}
 
-                    {user?.role === 'jpc_cs' && req.status === 'pending_cs' && (
+                    {/* CS Actions */}
+                    {(user?.role === 'jpc_cs' || user?.role === 'jpc_compliance_person' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager') && req.status === 'pending_cs' && (
                       <>
                         <button 
                           onClick={() => openActionModal(req.id, candidate?.full_name || 'Candidate', 'cs_forward')}
@@ -481,7 +548,8 @@ export const RTRLogBook: React.FC = () => {
                       </>
                     )}
 
-                    {user?.role === 'jpc_resume' && req.status === 'pending_rtr_team' && (
+                    {/* RTR Team Actions */}
+                    {(user?.role === 'jpc_resume' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager') && req.status === 'pending_rtr_team' && (
                       <>
                         <button 
                           onClick={() => openActionModal(req.id, candidate?.full_name || 'Candidate', 'rtr_complete')}
@@ -553,7 +621,7 @@ export const RTRLogBook: React.FC = () => {
               <div className="flex items-center justify-between mb-8">
                 <div>
                   <h2 className="text-2xl font-bold text-text-primary tracking-tight">Request RTR Change</h2>
-                  <p className="text-text-secondary text-sm mt-1">Submit your request to the Marketing TL.</p>
+                  <p className="text-text-secondary text-sm mt-1">Submit your RTR change request.</p>
                 </div>
                 <button 
                   onClick={() => setIsAddModalOpen(false)}
@@ -573,12 +641,9 @@ export const RTRLogBook: React.FC = () => {
                     required
                   >
                     <option value="">Choose a candidate...</option>
-                    {candidates
-                      .filter(c => String(c.assigned_recruiter) === String(user?.id))
-                      .map(c => (
-                        <option key={c.id} value={c.id}>{c.full_name}</option>
-                      ))
-                    }
+                    {availableCandidates.map(c => (
+                      <option key={c.id} value={c.id}>{c.full_name}</option>
+                    ))}
                   </select>
                 </div>
 
