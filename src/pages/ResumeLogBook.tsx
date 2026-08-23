@@ -27,6 +27,7 @@ import { db } from '../firebase';
 import { doc, setDoc, updateDoc, getDoc } from 'firebase/firestore';
 import { useToast } from '../contexts/ToastContext';
 import { uploadFile, handleViewFile } from '../services/fileService';
+import { SearchableCandidateSelect } from '../components/SearchableCandidateSelect';
 import * as XLSX from 'xlsx';
 
 export const ResumeLogBook: React.FC = () => {
@@ -904,20 +905,14 @@ export const ResumeLogBook: React.FC = () => {
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-6">
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-text-primary px-1">Select Candidate</label>
-                  <select 
-                    value={formData.candidate_id}
-                    onChange={(e) => setFormData({ ...formData, candidate_id: e.target.value })}
-                    className="w-full px-4 py-3 bg-bg-tertiary border border-border-primary rounded-2xl focus:outline-none focus:ring-2 focus:ring-accent-blue/20 transition-all font-medium"
-                    required
-                  >
-                    <option value="">Choose a candidate...</option>
-                    {availableCandidates.map(c => (
-                      <option key={c.id} value={c.id}>{c.full_name}</option>
-                    ))}
-                  </select>
-                </div>
+                <SearchableCandidateSelect
+                  candidates={availableCandidates}
+                  value={formData.candidate_id}
+                  onChange={(candId) => setFormData({ ...formData, candidate_id: candId })}
+                  label="Select Candidate"
+                  placeholder="Search and select candidate..."
+                  required
+                />
 
                 <div className="space-y-2">
                   <label className="text-sm font-bold text-text-primary px-1">Change Details</label>

@@ -28,6 +28,7 @@ import { db } from '../firebase';
 import { doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { useToast } from '../contexts/ToastContext';
 import { uploadFile, handleViewFile } from '../services/fileService';
+import { SearchableCandidateSelect } from '../components/SearchableCandidateSelect';
 import * as XLSX from 'xlsx';
 
 type TabType = 'resume_understanding' | 'interview_questions';
@@ -95,6 +96,18 @@ export const ResumePrepLog: React.FC = () => {
       unsubTeam();
     };
   }, [isAuthReady]);
+
+  const availableCandidates = useMemo(() => {
+    return candidates.filter(c => {
+      if (user?.role === 'jpc_recruiter') {
+        return String(c.assigned_recruiter) === String(user?.id);
+      }
+      if (user?.role === 'jpc_marketing') {
+        return String(c.assigned_marketing_leader) === String(user?.id);
+      }
+      return true;
+    });
+  }, [candidates, user]);
 
   const filteredRequests = useMemo(() => {
     return requests.filter(req => {
@@ -795,31 +808,14 @@ export const ResumePrepLog: React.FC = () => {
                   </select>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-text-primary px-1">Select Candidate</label>
-                  <select 
-                    value={formData.candidate_id}
-                    onChange={(e) => setFormData({ ...formData, candidate_id: e.target.value })}
-                    className="w-full px-4 py-3 bg-bg-tertiary border border-border-primary rounded-2xl focus:outline-none focus:ring-2 focus:ring-accent-blue/20 transition-all font-medium focus:text-text-primary"
-                    required
-                  >
-                    <option value="">Select candidate profile...</option>
-                    {candidates
-                      .filter(c => {
-                        if (user?.role === 'jpc_recruiter') {
-                          return String(c.assigned_recruiter) === String(user?.id);
-                        }
-                        if (user?.role === 'jpc_marketing') {
-                          return String(c.assigned_marketing_leader) === String(user?.id);
-                        }
-                        return true;
-                      })
-                      .map(c => (
-                        <option key={c.id} value={c.id}>{c.full_name}</option>
-                      ))
-                    }
-                  </select>
-                </div>
+                <SearchableCandidateSelect
+                  candidates={availableCandidates}
+                  value={formData.candidate_id}
+                  onChange={(candId) => setFormData({ ...formData, candidate_id: candId })}
+                  label="Select Candidate"
+                  placeholder="Search and select candidate profile..."
+                  required
+                />
 
                 <div className="space-y-2">
                   <label className="text-sm font-bold text-text-primary px-1">Request Details / Instructions</label>
