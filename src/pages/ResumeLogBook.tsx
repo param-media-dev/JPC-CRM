@@ -18,7 +18,8 @@ import {
   Calendar,
   Upload,
   FileText,
-  Loader2
+  Loader2,
+  Edit2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -46,6 +47,12 @@ export const ResumeLogBook: React.FC = () => {
     candidateName: string;
   } | null>(null);
   const [actionNotes, setActionNotes] = useState('');
+  const [completedByName, setCompletedByName] = useState('');
+  const [completedById, setCompletedById] = useState<string | number | null>(null);
+  const [editingCompletedByReq, setEditingCompletedByReq] = useState<ResumeChangeRequest | null>(null);
+  const [editCompletedByName, setEditCompletedByName] = useState('');
+  const [editCompletedById, setEditCompletedById] = useState<string | number | null>(null);
+  const [isSavingCompletedBy, setIsSavingCompletedBy] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -259,7 +266,10 @@ export const ResumeLogBook: React.FC = () => {
         }
       }
 
-      await handleUpdateStatus(requestId, newStatus, actionNotes, finalResumeUrl, resumeBase64, resumeFilename);
+      const activeCompletedByName = completedByName.trim() || user?.display_name || user?.username || 'Resume Team';
+      const activeCompletedById = completedById || user?.id || null;
+
+      await handleUpdateStatus(requestId, newStatus, actionNotes, finalResumeUrl, resumeBase64, resumeFilename, activeCompletedById, activeCompletedByName);
       
       // Update candidate record if completed
       if (newStatus === 'completed' && finalResumeUrl) {
@@ -290,8 +300,8 @@ export const ResumeLogBook: React.FC = () => {
               url: finalResumeUrl,
               filename: resumeFilename || `resume_v${newVerNum}.pdf`,
               uploaded_at: new Date().toISOString(),
-              uploaded_by: user?.id || null,
-              uploaded_by_name: user?.display_name || user?.username || 'Resume Team',
+              uploaded_by: activeCompletedById,
+              uploaded_by_name: activeCompletedByName,
               notes: actionNotes || 'Resume patched and completed via Resume Log Book',
               version_number: newVerNum,
               is_current: true
@@ -322,14 +332,81 @@ export const ResumeLogBook: React.FC = () => {
     }
   };
 
+  const getCompletedByName = (req: { completed_by?: string | number | null; completed_by_name?: string | null }) => {
+    if (
+      req.completed_by_name && 
+      req.completed_by_name.trim() !== '' && 
+      req.completed_by_name !== 'Resume Team' && 
+      req.completed_by_name !== 'RTR Team' &&
+      req.completed_by_name !== 'User'
+    ) {
+      return req.completed_by_name;
+    }
+    if (req.completed_by) {
+      const u = team.find(t => String(t.id) === String(req.completed_by));
+      if (u) {
+        if (u.display_name && u.display_name !== 'User') return u.display_name;
+        if (u.username) return u.username;
+        if (u.email) return u.email.split('@')[0];
+      }
+    }
+    const resumeUsers = team.filter(t => t.role === 'jpc_resume');
+    if (resumeUsers.length === 1) {
+      return resumeUsers[0].display_name || resumeUsers[0].username || resumeUsers[0].email?.split('@')[0] || 'Resume Team';
+    }
+    return req.completed_by_name || 'Resume Team';
+  };
+
   const openActionModal = (requestId: string, candidateName: string, type: typeof actionConfig.type) => {
     setActionConfig({ requestId, candidateName, type });
     setActionNotes('');
     setSelectedFile(null);
+    const initialName = (user?.display_name && user.display_name !== 'User') 
+      ? user.display_name 
+      : (user?.username || (user?.email ? user.email.split('@')[0] : ''));
+    setCompletedByName(initialName);
+    setCompletedById(user?.id || null);
     setIsActionModalOpen(true);
   };
 
-  const handleUpdateStatus = async (requestId: string, newStatus: ResumeChangeRequest['status'], notes?: string, resumeUrl?: string, resumeBase64?: string, resumeFilename?: string) => {
+  const openEditCompletedBy = (req: ResumeChangeRequest) => {
+    setEditingCompletedByReq(req);
+    const currentName = getCompletedByName(req);
+    setEditCompletedByName(currentName !== 'Resume Team' ? currentName : '');
+    setEditCompletedById(req.completed_by || null);
+  };
+
+  const handleSaveCompletedBy = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCompletedByReq) return;
+    setIsSavingCompletedBy(true);
+    try {
+      const nameToSave = editCompletedByName.trim() || 'Resume Team';
+      await updateDoc(doc(db, 'jpc_resume_requests', editingCompletedByReq.id), {
+        completed_by: editCompletedById || editingCompletedByReq.completed_by || user?.id || null,
+        completed_by_name: nameToSave,
+        updated_at: new Date().toISOString()
+      });
+      showToast(`Updated completed user to ${nameToSave}`, 'success');
+      setEditingCompletedByReq(null);
+    } catch (err) {
+      console.error('Failed to update completed by:', err);
+      showToast('Failed to update completed by name', 'error');
+    } finally {
+      setIsSavingCompletedBy(false);
+    }
+  };
+
+  const handleUpdateStatus = async (
+    requestId: string, 
+    newStatus: ResumeChangeRequest['status'], 
+    notes?: string, 
+    resumeUrl?: string, 
+    resumeBase64?: string, 
+    resumeFilename?: string,
+    completedBy?: string | number | null,
+    completedByNameParam?: string | null
+  ) => {
     try {
       const updateData: any = { 
         status: newStatus, 
@@ -337,8 +414,8 @@ export const ResumeLogBook: React.FC = () => {
       };
 
       if (newStatus === 'completed') {
-        updateData.completed_by = user?.id || null;
-        updateData.completed_by_name = user?.display_name || user?.username || 'Resume Team';
+        updateData.completed_by = completedBy || user?.id || null;
+        updateData.completed_by_name = completedByNameParam || user?.display_name || user?.username || 'Resume Team';
         updateData.completed_at = new Date().toISOString();
       }
       
@@ -414,7 +491,7 @@ export const ResumeLogBook: React.FC = () => {
         ? new Date(req.completed_at).toLocaleString() 
         : (req.status === 'completed' ? new Date(req.updated_at).toLocaleString() : 'N/A');
 
-      const completedBy = req.completed_by_name || (req.status === 'completed' ? 'Resume Team' : 'N/A');
+      const completedBy = getCompletedByName(req);
 
       return {
         'S.No': idx + 1,
@@ -642,20 +719,35 @@ export const ResumeLogBook: React.FC = () => {
                     )}
 
                     {req.status === 'completed' && (
-                      <div className="flex flex-wrap items-center gap-3 p-3 bg-accent-green/5 border border-accent-green/20 rounded-2xl">
-                        <div className="flex items-center gap-1.5 text-xs text-accent-green font-bold">
-                          <CheckCircle2 className="w-4 h-4 shrink-0" />
-                          <span>Completed By:</span>
-                          <span className="text-text-primary font-black">{req.completed_by_name || 'Resume Team'}</span>
+                      <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-accent-green/5 border border-accent-green/20 rounded-2xl">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <div className="flex items-center gap-2 text-xs text-accent-green font-bold">
+                            <CheckCircle2 className="w-4 h-4 shrink-0" />
+                            <span className="text-text-secondary">Completed By:</span>
+                            <span className="text-text-primary font-black text-sm">{getCompletedByName(req)}</span>
+                            <span className="text-[10px] text-accent-green font-bold bg-accent-green/15 px-2 py-0.5 rounded-full border border-accent-green/20">
+                              Resume Team
+                            </span>
+                          </div>
+                          <div className="h-3 w-px bg-accent-green/20 hidden sm:block" />
+                          <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+                            <Calendar className="w-3.5 h-3.5 text-text-muted shrink-0" />
+                            <span>Completed Date:</span>
+                            <span className="font-bold text-text-primary">
+                              {new Date(req.completed_at || req.updated_at).toLocaleDateString()} at {new Date(req.completed_at || req.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
                         </div>
-                        <div className="h-3 w-px bg-accent-green/20 hidden sm:block" />
-                        <div className="flex items-center gap-1.5 text-xs text-text-secondary">
-                          <Calendar className="w-3.5 h-3.5 text-text-muted shrink-0" />
-                          <span>Completed Date:</span>
-                          <span className="font-bold text-text-primary">
-                            {new Date(req.completed_at || req.updated_at).toLocaleDateString()} at {new Date(req.completed_at || req.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        </div>
+                        {(user?.role === 'jpc_resume' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager') && (
+                          <button
+                            onClick={() => openEditCompletedBy(req)}
+                            className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-accent-green hover:bg-accent-green/15 border border-accent-green/30 rounded-xl transition-all cursor-pointer"
+                            title="Update who completed this request"
+                          >
+                            <Edit2 className="w-3 h-3" />
+                            <span>Edit Name</span>
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -749,9 +841,14 @@ export const ResumeLogBook: React.FC = () => {
                           <div className="flex flex-col items-center gap-1.5 text-accent-green">
                             <CheckCircle2 className="w-7 h-7" />
                             <span className="font-bold text-xs uppercase tracking-wider">Completed</span>
-                            <span className="text-[11px] font-bold text-text-primary">
-                              By: {req.completed_by_name || 'Resume Team'}
-                            </span>
+                            <div className="text-center">
+                              <span className="text-xs font-black text-text-primary block">
+                                By: {getCompletedByName(req)}
+                              </span>
+                              <span className="text-[10px] text-accent-green font-bold block">
+                                (Resume Team)
+                              </span>
+                            </div>
                             <span className="text-[10px] text-text-muted">
                               {new Date(req.completed_at || req.updated_at).toLocaleDateString()} {new Date(req.completed_at || req.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
@@ -885,6 +982,47 @@ export const ResumeLogBook: React.FC = () => {
               <form onSubmit={handleAction} className="space-y-6">
                 {actionConfig.type === 'resume_complete' && (
                   <div className="space-y-4">
+                    <div className="space-y-2 p-4 bg-accent-green/5 border border-accent-green/20 rounded-2xl">
+                      <label className="text-xs font-bold text-text-primary px-1 flex items-center justify-between">
+                        <span>Completed By (Resume Team Member Name)</span>
+                        <span className="text-[10px] text-accent-green font-bold uppercase tracking-wider">Required</span>
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={completedByName}
+                          onChange={(e) => setCompletedByName(e.target.value)}
+                          placeholder="Enter resume team member name..."
+                          className="flex-1 px-4 py-2.5 bg-bg-tertiary border border-border-primary rounded-xl focus:outline-none focus:ring-2 focus:ring-accent-green/30 font-semibold text-text-primary text-sm"
+                          required
+                        />
+                        {team.length > 0 && (
+                          <select
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                const sel = team.find(u => String(u.id) === e.target.value);
+                                if (sel) {
+                                  setCompletedByName(sel.display_name || sel.username);
+                                  setCompletedById(sel.id);
+                                }
+                              }
+                            }}
+                            className="px-3 py-2.5 bg-bg-tertiary border border-border-primary rounded-xl text-xs font-bold text-text-secondary focus:outline-none cursor-pointer max-w-[140px]"
+                          >
+                            <option value="">Quick Pick</option>
+                            {team.filter(u => u.role === 'jpc_resume' || u.role === 'administrator' || u.role === 'jpc_sysadmin' || u.role === 'jpc_manager').map(u => (
+                              <option key={u.id} value={u.id}>
+                                {u.display_name || u.username}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-text-muted px-1">
+                        This name will be displayed as "Completed By: [Name] (Resume Team)" on the card and exported reports.
+                      </p>
+                    </div>
+
                     <div className="space-y-2">
                       <label className="text-sm font-bold text-text-primary px-1">Upload New Resume</label>
                       <div className="relative">
@@ -1057,6 +1195,103 @@ export const ResumeLogBook: React.FC = () => {
                 </button>
               </div>
             </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* Edit Completed By Modal */}
+      {editingCompletedByReq && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="bg-bg-secondary w-full max-w-md rounded-[32px] shadow-2xl overflow-hidden border border-border-primary p-8"
+          >
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-accent-green/10 rounded-2xl">
+                  <Edit2 className="w-6 h-6 text-accent-green" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-text-primary">Edit Completed By</h2>
+                  <p className="text-xs text-text-secondary">Assign or update the resume team member name</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setEditingCompletedByReq(null)}
+                className="p-2 hover:bg-bg-tertiary rounded-xl text-text-muted hover:text-text-primary transition-all cursor-pointer"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveCompletedBy} className="space-y-5">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-text-muted uppercase tracking-wider px-1">
+                  Team Member Name
+                </label>
+                <input
+                  type="text"
+                  value={editCompletedByName}
+                  onChange={(e) => setEditCompletedByName(e.target.value)}
+                  placeholder="e.g. Param Parmar, Mohit Panchal, Faiz..."
+                  className="w-full px-4 py-3 bg-bg-tertiary border border-border-primary rounded-2xl text-sm font-semibold text-text-primary focus:outline-none focus:ring-2 focus:ring-accent-green/30"
+                  required
+                />
+              </div>
+
+              {team.length > 0 && (
+                <div className="space-y-2">
+                  <label className="text-xs font-bold text-text-muted uppercase tracking-wider px-1">
+                    Or Select From Team
+                  </label>
+                  <select
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        const sel = team.find(u => String(u.id) === e.target.value);
+                        if (sel) {
+                          setEditCompletedByName(sel.display_name || sel.username);
+                          setEditCompletedById(sel.id);
+                        }
+                      }
+                    }}
+                    className="w-full px-4 py-3 bg-bg-tertiary border border-border-primary rounded-2xl text-sm font-semibold text-text-primary focus:outline-none focus:ring-2 focus:ring-accent-green/30 cursor-pointer"
+                  >
+                    <option value="">Select Team Member...</option>
+                    {team.map(u => (
+                      <option key={u.id} value={u.id}>
+                        {u.display_name || u.username} ({u.role.replace('jpc_', '')})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="p-3.5 bg-accent-green/5 rounded-2xl border border-accent-green/15 text-xs text-text-secondary">
+                <p className="font-semibold text-text-primary">Preview Card Display:</p>
+                <p className="text-xs text-accent-green font-bold mt-1">
+                  Completed By: <span className="text-text-primary font-black">{editCompletedByName.trim() || 'Resume Team'}</span> (Resume Team)
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button 
+                  type="button"
+                  onClick={() => setEditingCompletedByReq(null)}
+                  className="flex-1 py-3.5 bg-bg-tertiary text-text-primary font-bold rounded-2xl hover:bg-bg-tertiary/80 transition-all text-sm cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  disabled={isSavingCompletedBy}
+                  className="flex-1 py-3.5 bg-accent-green text-white font-bold rounded-2xl hover:bg-accent-green/90 transition-all shadow-lg shadow-accent-green/20 flex items-center justify-center gap-2 text-sm cursor-pointer font-bold disabled:opacity-50"
+                >
+                  {isSavingCompletedBy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  Save Name
+                </button>
+              </div>
+            </form>
           </motion.div>
         </div>
       )}
