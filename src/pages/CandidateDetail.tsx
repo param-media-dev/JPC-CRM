@@ -66,7 +66,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { Candidate, Payment, Promise as PromiseType, QCChecklistItem, FollowUp, ActivityLog, User, Stage, ResumeChangeRequest, Application, InterviewSupportRequest, TargetReductionRequest } from '../types';
+import { Candidate, Payment, Promise as PromiseType, QCChecklistItem, FollowUp, ActivityLog, User, Stage, ResumeChangeRequest, Application, InterviewSupportRequest, TargetReductionRequest, ResumeVersion } from '../types';
 import { query, collection, where, onSnapshot, doc, setDoc, getDocs } from 'firebase/firestore';
 import { db, firebaseConfig } from '../firebase';
 import { initializeApp } from 'firebase/app';
@@ -626,17 +626,49 @@ export const CandidateDetail: React.FC = () => {
         email: candidate.email || 'N/A',
         phone: candidate.phone || ''
       });
+
+      // Prepare versions preserving all previous ones
+      const existingVersions: ResumeVersion[] = candidate.resume_versions ? [...candidate.resume_versions] : [];
+      if (existingVersions.length === 0 && (candidate.resume_url || candidate.resume_base64)) {
+        existingVersions.push({
+          id: `v1_${Date.now() - 1000}`,
+          url: candidate.resume_url || candidate.resume_base64 || '',
+          filename: candidate.resume_filename || 'original_resume.pdf',
+          uploaded_at: candidate.updated_at || candidate.created_at || new Date().toISOString(),
+          version_number: 1,
+          is_current: false,
+          notes: 'Original resume'
+        });
+      }
+
+      const updatedPrevVersions = existingVersions.map(v => ({ ...v, is_current: false }));
+      const newVersionNumber = updatedPrevVersions.length + 1;
+      const newVersionObj: ResumeVersion = {
+        id: `v${newVersionNumber}_${Date.now()}`,
+        url: url,
+        filename: resumeFile.name,
+        uploaded_at: new Date().toISOString(),
+        uploaded_by: user?.id || null,
+        uploaded_by_name: user?.display_name || user?.username || 'Team Member',
+        notes: resumePhrases ? `Phrases: ${resumePhrases}` : 'Updated resume',
+        version_number: newVersionNumber,
+        is_current: true
+      };
+
+      const finalVersions = [...updatedPrevVersions, newVersionObj];
+
       const updated: Candidate = {
         ...candidate,
         resume_url: url,
         resume_base64: url,
         resume_filename: resumeFile.name,
         resume_phrases: resumePhrases || candidate.resume_phrases,
+        resume_versions: finalVersions,
         updated_at: new Date().toISOString()
       };
       await saveCandidate(updated, user?.id ? String(user.id) : null);
-      await logActivity(candidate.id, 'Resume updated', `Resume updated to ${resumeFile.name}${resumePhrases ? `. Phrases: ${resumePhrases}` : ''}`, user?.id || null);
-      showToast('Resume updated successfully', 'success');
+      await logActivity(candidate.id, 'Resume updated', `Resume updated to Version ${newVersionNumber} (${resumeFile.name})${resumePhrases ? `. Phrases: ${resumePhrases}` : ''}`, user?.id || null);
+      showToast(`Resume Version ${newVersionNumber} uploaded successfully`, 'success');
       setIsResumeUploadModalOpen(false);
       setResumeFile(null);
       setResumePhrases('');
@@ -1588,7 +1620,7 @@ export const CandidateDetail: React.FC = () => {
                 ) : null}
                 {(canEditResume || isSalesperson) && (
                   <div className="flex items-center gap-2">
-                    {(user?.role === 'jpc_recruiter' || user?.role === 'jpc_marketing' || user?.role === 'jpc_cs' || user?.role === 'jpc_compliance_person' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager') && (
+                    {(user?.role === 'jpc_recruiter' || user?.role === 'jpc_marketing' || user?.role === 'jpc_cs' || user?.role === 'jpc_compliance_person' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_resume') && (
                       <button 
                         onClick={() => setIsResumePatchingModalOpen(true)}
                         className="flex items-center gap-2 px-4 py-2 bg-accent-purple text-white font-bold rounded-xl hover:bg-accent-purple/90 transition-all text-xs shadow-md shadow-accent-purple/10"
@@ -1678,24 +1710,48 @@ export const CandidateDetail: React.FC = () => {
                 </div>
               )}
             </div>
-            {resumeRequests.filter(r => r.status === 'completed' && (r.new_resume_url || r.resume_base64)).length > 0 && (
+            {((candidate.resume_versions && candidate.resume_versions.length > 0) || resumeRequests.filter(r => r.status === 'completed' && (r.new_resume_url || r.resume_base64)).length > 0) && (
               <div className="px-6 py-4 bg-bg-tertiary/30 border-t border-border-primary">
-                <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-3">Resume History</p>
+                <p className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-3">Resume Version History</p>
                 <div className="space-y-2">
-                  {resumeRequests.filter(r => r.status === 'completed' && (r.new_resume_url || r.resume_base64)).map((req, idx) => (
-                    <div key={req.id} className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <FileText className="w-3 h-3 text-text-muted" />
-                        <span className="text-text-secondary">Version {idx + 1} ({new Date(req.updated_at).toLocaleDateString()})</span>
+                  {candidate.resume_versions && candidate.resume_versions.length > 0 ? (
+                    candidate.resume_versions.map((ver, idx) => (
+                      <div key={ver.id || idx} className="flex items-center justify-between text-xs p-2 bg-bg-secondary/60 rounded-xl border border-border-primary/50">
+                        <div className="flex items-center gap-2">
+                          <FileText className="w-3.5 h-3.5 text-accent-purple" />
+                          <span className="font-bold text-text-primary">v{ver.version_number || idx + 1}</span>
+                          <span className="text-text-secondary truncate max-w-[200px]">{ver.filename}</span>
+                          {ver.is_current && (
+                            <span className="px-1.5 py-0.5 rounded bg-accent-purple/15 text-accent-purple text-[9px] font-black uppercase">Current</span>
+                          )}
+                          <span className="text-text-muted text-[11px]">({new Date(ver.uploaded_at).toLocaleDateString()})</span>
+                        </div>
+                        {ver.url && (
+                          <button 
+                            onClick={() => handleViewFile(ver.url, ver.filename)}
+                            className="text-accent-purple hover:underline font-bold"
+                          >
+                            View / Download
+                          </button>
+                        )}
                       </div>
-                      <button 
-                        onClick={() => handleViewFile(req.new_resume_url || req.resume_base64!, req.resume_filename || 'resume.pdf')}
-                        className="text-accent-purple hover:underline font-medium"
-                      >
-                        View / Download
-                      </button>
-                    </div>
-                  ))}
+                    ))
+                  ) : (
+                    resumeRequests.filter(r => r.status === 'completed' && (r.new_resume_url || r.resume_base64)).map((req, idx) => (
+                      <div key={req.id} className="flex items-center justify-between text-xs p-2 bg-bg-secondary/60 rounded-xl border border-border-primary/50">
+                        <div className="flex items-center gap-2">
+                          <FileText className="w-3.5 h-3.5 text-text-muted" />
+                          <span className="text-text-secondary">Patch Version {idx + 1} ({new Date(req.updated_at).toLocaleDateString()})</span>
+                        </div>
+                        <button 
+                          onClick={() => handleViewFile(req.new_resume_url || req.resume_base64!, req.resume_filename || 'resume.pdf')}
+                          className="text-accent-purple hover:underline font-medium"
+                        >
+                          View / Download
+                        </button>
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
             )}

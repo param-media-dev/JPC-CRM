@@ -15,7 +15,9 @@ import {
   Filter,
   ExternalLink,
   Upload,
-  FileText
+  FileText,
+  Download,
+  Calendar
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -23,6 +25,7 @@ import { db } from '../firebase';
 import { doc, setDoc, updateDoc } from 'firebase/firestore';
 import { useToast } from '../contexts/ToastContext';
 import { uploadFile, handleViewFile } from '../services/fileService';
+import * as XLSX from 'xlsx';
 
 export const RTRLogBook: React.FC = () => {
   const { user, isAuthReady } = useAuth();
@@ -34,6 +37,8 @@ export const RTRLogBook: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isActionModalOpen, setIsActionModalOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportStatusFilter, setExportStatusFilter] = useState<string>('all');
   const [actionConfig, setActionConfig] = useState<{
     requestId: string;
     type: 'tl_forward' | 'tl_reject' | 'cs_forward' | 'cs_back' | 'rtr_complete' | 'rtr_back' | 'rtr_reject';
@@ -281,6 +286,12 @@ export const RTRLogBook: React.FC = () => {
         status: newStatus, 
         updated_at: new Date().toISOString() 
       };
+
+      if (newStatus === 'completed') {
+        updateData.completed_by = user?.id || null;
+        updateData.completed_by_name = user?.display_name || user?.username || 'RTR Team';
+        updateData.completed_at = new Date().toISOString();
+      }
       
       if ((user?.role === 'jpc_marketing' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager') && notes && newStatus !== 'pending_rtr_team') updateData.tl_notes = notes;
       if ((user?.role === 'jpc_cs' || user?.role === 'jpc_compliance_person' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager') && notes) updateData.cs_notes = notes;
@@ -320,6 +331,79 @@ export const RTRLogBook: React.FC = () => {
     }
   };
 
+  const handleExportReport = (statusToExport: string) => {
+    const filtered = requests.filter(req => {
+      if (statusToExport === 'all') return true;
+      if (statusToExport === 'pending_all') {
+        return req.status === 'pending_tl' || req.status === 'pending_cs' || req.status === 'pending_rtr_team';
+      }
+      return req.status === statusToExport;
+    });
+
+    if (filtered.length === 0) {
+      showToast('No records found for the selected export status', 'error');
+      return;
+    }
+
+    const statusMap: Record<string, string> = {
+      pending_tl: 'Pending TL Approval',
+      pending_cs: 'Pending CS Review',
+      pending_rtr_team: 'Pending RTR Team Action',
+      completed: 'Completed',
+      rejected: 'Rejected'
+    };
+
+    const exportData = filtered.map((req, idx) => {
+      const candidate = candidates.find(c => c.id === req.candidate_id);
+      const recruiter = team.find(u => String(u.id) === String(req.recruiter_id));
+      const csUser = team.find(u => String(u.id) === String(candidate?.assigned_cs));
+      const mktLeader = team.find(u => String(u.id) === String(candidate?.assigned_marketing_leader));
+      
+      const formattedCreated = req.created_at ? new Date(req.created_at).toLocaleString() : 'N/A';
+      const formattedUpdated = req.updated_at ? new Date(req.updated_at).toLocaleString() : 'N/A';
+      const formattedCompleted = req.completed_at 
+        ? new Date(req.completed_at).toLocaleString() 
+        : (req.status === 'completed' ? new Date(req.updated_at).toLocaleString() : 'N/A');
+
+      const completedBy = req.completed_by_name || (req.status === 'completed' ? 'RTR Team' : 'N/A');
+
+      return {
+        'S.No': idx + 1,
+        'Request ID': req.id,
+        'Candidate Name': candidate?.full_name || 'Unknown',
+        'Candidate Email': candidate?.email || 'N/A',
+        'Candidate Phone': candidate?.phone || 'N/A',
+        'Domain / Tech Stack': candidate?.domain_interested || candidate?.job_interest || 'N/A',
+        'Target Role': candidate?.job_interest || 'N/A',
+        'Current Stage': candidate?.current_stage ? candidate.current_stage.replace('_', ' ').toUpperCase() : 'N/A',
+        'Assigned Recruiter': recruiter?.display_name || recruiter?.username || req.recruiter_id || 'Unassigned',
+        'Assigned CS Person': csUser?.display_name || 'Unassigned',
+        'Assigned Marketing Leader': mktLeader?.display_name || 'Unassigned',
+        'Status': statusMap[req.status] || req.status,
+        'Request Date & Time': formattedCreated,
+        'RTR Details / Instructions': req.details || '',
+        'TL Remarks / Notes': req.tl_notes || '',
+        'CS Remarks / Notes': req.cs_notes || '',
+        'RTR Team Remarks / Notes': req.rtr_team_notes || '',
+        'Completed By': completedBy,
+        'Completed Date & Time': formattedCompleted,
+        'New RTR File Name': req.rtr_filename || '',
+        'New RTR Document URL': req.new_rtr_url || req.rtr_base64 || '',
+        'Last Updated At': formattedUpdated
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'RTR Log');
+    
+    const statusLabel = statusToExport === 'all' ? 'All_Statuses' : statusToExport;
+    const fileName = `RTR_Log_Report_${statusLabel}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+    showToast(`Exported ${filtered.length} records to Excel report`, 'success');
+    setIsExportModalOpen(false);
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'pending_tl': return 'bg-accent-purple/10 text-accent-purple border-accent-purple/20';
@@ -356,6 +440,13 @@ export const RTRLogBook: React.FC = () => {
           <p className="text-text-secondary mt-1">Track and manage RTR modification requests.</p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setIsExportModalOpen(true)}
+            className="flex items-center gap-2 px-5 py-3 border border-border-primary hover:border-text-secondary/35 text-text-primary rounded-2xl text-sm font-bold bg-bg-secondary hover:shadow transition-all cursor-pointer"
+          >
+            <Download className="w-4 h-4 text-accent-blue" />
+            <span>Export Report</span>
+          </button>
           {canCreateRequest && (
             <button 
               onClick={() => setIsAddModalOpen(true)}
@@ -480,15 +571,38 @@ export const RTRLogBook: React.FC = () => {
                     )}
 
                     {(req.new_rtr_url || req.rtr_base64) && (
-                      <div className="flex items-center gap-2 pt-2">
+                      <div className="flex flex-wrap items-center gap-2 pt-2">
                         <span className="text-xs font-bold text-text-primary">New RTR:</span>
                         <button 
                           onClick={() => handleViewFile(req.new_rtr_url || req.rtr_base64 || '', req.rtr_filename || 'rtr.pdf')}
-                          className="text-xs text-accent-blue hover:underline flex items-center gap-1"
+                          className="inline-flex items-center gap-2 px-3 py-1.5 bg-accent-blue/10 hover:bg-accent-blue/20 text-accent-blue font-bold text-xs rounded-xl border border-accent-blue/20 transition-all cursor-pointer shadow-sm"
                         >
-                          <ExternalLink className="w-3 h-3" />
-                          View / Download Document
+                          <Download className="w-3.5 h-3.5" />
+                          <span>View / Download Document</span>
+                          {req.rtr_filename && (
+                            <span className="text-[11px] text-text-muted font-normal underline decoration-dotted">
+                              ({req.rtr_filename})
+                            </span>
+                          )}
                         </button>
+                      </div>
+                    )}
+
+                    {req.status === 'completed' && (
+                      <div className="flex flex-wrap items-center gap-3 p-3 bg-accent-green/5 border border-accent-green/20 rounded-2xl">
+                        <div className="flex items-center gap-1.5 text-xs text-accent-green font-bold">
+                          <CheckCircle2 className="w-4 h-4 shrink-0" />
+                          <span>Completed By:</span>
+                          <span className="text-text-primary font-black">{req.completed_by_name || 'RTR Team'}</span>
+                        </div>
+                        <div className="h-3 w-px bg-accent-green/20 hidden sm:block" />
+                        <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+                          <Calendar className="w-3.5 h-3.5 text-text-muted shrink-0" />
+                          <span>Completed Date:</span>
+                          <span className="font-bold text-text-primary">
+                            {new Date(req.completed_at || req.updated_at).toLocaleDateString()} at {new Date(req.completed_at || req.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -576,11 +690,17 @@ export const RTRLogBook: React.FC = () => {
                     )}
 
                     {(req.status === 'completed' || req.status === 'rejected') && (
-                      <div className="text-center py-4">
+                      <div className="text-center py-4 px-3 bg-bg-tertiary/60 rounded-2xl border border-border-primary/50">
                         {req.status === 'completed' ? (
-                          <div className="flex flex-col items-center gap-2 text-accent-green">
-                            <CheckCircle2 className="w-8 h-8" />
-                            <span className="font-bold text-sm">Request Completed</span>
+                          <div className="flex flex-col items-center gap-1.5 text-accent-green">
+                            <CheckCircle2 className="w-7 h-7" />
+                            <span className="font-bold text-xs uppercase tracking-wider">Completed</span>
+                            <span className="text-[11px] font-bold text-text-primary">
+                              By: {req.completed_by_name || 'RTR Team'}
+                            </span>
+                            <span className="text-[10px] text-text-muted">
+                              {new Date(req.completed_at || req.updated_at).toLocaleDateString()} {new Date(req.completed_at || req.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
                           </div>
                         ) : (
                           <div className="flex flex-col items-center gap-2 text-accent-red">
@@ -803,6 +923,83 @@ export const RTRLogBook: React.FC = () => {
                   </button>
                 </div>
               </form>
+            </div>
+          </motion.div>
+        </div>
+      )}
+      {/* Export Report Modal */}
+      {isExportModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="bg-bg-secondary w-full max-w-md rounded-[32px] shadow-2xl overflow-hidden border border-border-primary p-8"
+          >
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-accent-blue/10 rounded-2xl">
+                  <Download className="w-6 h-6 text-accent-blue" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-text-primary">Export RTR Log</h2>
+                  <p className="text-xs text-text-secondary">Comprehensive report with full tracking</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsExportModalOpen(false)}
+                className="p-2 hover:bg-bg-tertiary rounded-xl text-text-muted hover:text-text-primary transition-all"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-5">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-text-muted uppercase tracking-wider px-1">
+                  Status Filter
+                </label>
+                <select
+                  value={exportStatusFilter}
+                  onChange={(e) => setExportStatusFilter(e.target.value)}
+                  className="w-full px-4 py-3 bg-bg-tertiary border border-border-primary rounded-2xl text-sm font-semibold text-text-primary focus:outline-none focus:ring-2 focus:ring-accent-blue/20 cursor-pointer"
+                >
+                  <option value="all">All Statuses ({requests.length} total)</option>
+                  <option value="pending_all">All Pending ({requests.filter(r => r.status.startsWith('pending')).length})</option>
+                  <option value="pending_tl">Pending TL ({requests.filter(r => r.status === 'pending_tl').length})</option>
+                  <option value="pending_cs">Pending CS ({requests.filter(r => r.status === 'pending_cs').length})</option>
+                  <option value="pending_rtr_team">Pending RTR Team ({requests.filter(r => r.status === 'pending_rtr_team').length})</option>
+                  <option value="completed">Completed ({requests.filter(r => r.status === 'completed').length})</option>
+                  <option value="rejected">Rejected ({requests.filter(r => r.status === 'rejected').length})</option>
+                </select>
+              </div>
+
+              <div className="p-4 bg-bg-tertiary rounded-2xl border border-border-primary/50 text-xs text-text-secondary space-y-1.5">
+                <p className="font-bold text-text-primary">Report Highlights:</p>
+                <ul className="list-disc list-inside space-y-1 text-[11px] text-text-muted">
+                  <li>Candidate details (Name, contact, stage, domain)</li>
+                  <li>All comments/remarks (TL, CS, RTR team)</li>
+                  <li><strong>Completed By & Completed Date/Time</strong></li>
+                  <li>Full RTR modification details & document links</li>
+                </ul>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button 
+                  type="button"
+                  onClick={() => setIsExportModalOpen(false)}
+                  className="flex-1 py-3.5 bg-bg-tertiary text-text-primary font-bold rounded-2xl hover:bg-bg-tertiary/80 transition-all text-sm cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => handleExportReport(exportStatusFilter)}
+                  className="flex-1 py-3.5 bg-accent-blue text-white font-bold rounded-2xl hover:bg-accent-blue/90 transition-all shadow-lg shadow-accent-blue/20 flex items-center justify-center gap-2 text-sm cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  Export Excel (.xlsx)
+                </button>
+              </div>
             </div>
           </motion.div>
         </div>

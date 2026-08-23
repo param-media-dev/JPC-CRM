@@ -70,8 +70,11 @@ export function canUserAccessCandidate(candidate: Candidate, user: User | null, 
     return false;
   }
 
-  // 4. Resume Team: assigned resume member
+  // 4. Resume Team: assigned resume member or any candidate in Marketing Active / Interviewing stages
   if (user.role === 'jpc_resume') {
+    if (candidate.current_stage === 'marketing_active' || candidate.current_stage === 'interviewing') {
+      return true;
+    }
     return userMatches(candidate.assigned_resume);
   }
 

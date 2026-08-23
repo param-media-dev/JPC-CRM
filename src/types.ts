@@ -118,6 +118,7 @@ export interface Candidate {
   resume_url?: string | null;
   resume_base64?: string | null;
   resume_filename?: string | null;
+  resume_versions?: ResumeVersion[];
   agreement_url?: string | null;
   agreement_base64?: string | null;
   agreement_filename?: string | null;
@@ -125,6 +126,18 @@ export interface Candidate {
   remarks?: string;
   resume_phrases?: string;
   marketing_entity?: ('sivium' | 'recruiter')[];
+}
+
+export interface ResumeVersion {
+  id: string;
+  url: string;
+  filename: string;
+  uploaded_at: string;
+  uploaded_by?: string | number | null;
+  uploaded_by_name?: string | null;
+  notes?: string;
+  version_number?: number;
+  is_current?: boolean;
 }
 
 export interface TargetReductionRequest {
@@ -235,6 +248,9 @@ export interface ResumeChangeRequest {
   new_resume_url?: string;
   resume_base64?: string;
   resume_filename?: string;
+  completed_by?: string | number | null;
+  completed_by_name?: string | null;
+  completed_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -251,6 +267,9 @@ export interface RTRRequest {
   new_rtr_url?: string;
   rtr_base64?: string;
   rtr_filename?: string;
+  completed_by?: string | number | null;
+  completed_by_name?: string | null;
+  completed_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -414,6 +433,9 @@ export interface ResumePrepRequest {
   resume_team_notes?: string;
   document_url?: string;
   document_filename?: string;
+  completed_by?: string | number | null;
+  completed_by_name?: string | null;
+  completed_at?: string | null;
   created_at: string;
   updated_at: string;
 }

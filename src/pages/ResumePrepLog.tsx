@@ -17,7 +17,9 @@ import {
   ExternalLink,
   User as UserIcon,
   MessageSquare,
-  Trash2
+  Trash2,
+  Download,
+  Calendar
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
@@ -25,6 +27,7 @@ import { db } from '../firebase';
 import { doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { useToast } from '../contexts/ToastContext';
 import { uploadFile, handleViewFile } from '../services/fileService';
+import * as XLSX from 'xlsx';
 
 type TabType = 'resume_understanding' | 'interview_questions';
 
@@ -43,6 +46,9 @@ export const ResumePrepLog: React.FC = () => {
   // Modal states
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isActionModalOpen, setIsActionModalOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportStatusFilter, setExportStatusFilter] = useState<string>('all');
+  const [exportTypeFilter, setExportTypeFilter] = useState<string>('all');
   
   // Add state
   const [formData, setFormData] = useState({
@@ -200,6 +206,12 @@ export const ResumePrepLog: React.FC = () => {
         updated_at: new Date().toISOString()
       };
 
+      if (finalStatus === 'completed') {
+        updateData.completed_by = user?.id || null;
+        updateData.completed_by_name = user?.display_name || user?.username || 'Resume Team';
+        updateData.completed_at = new Date().toISOString();
+      }
+
       if (actionNotes) {
         updateData.resume_team_notes = actionNotes;
       }
@@ -233,6 +245,85 @@ export const ResumePrepLog: React.FC = () => {
     } finally {
       setIsUploading(false);
     }
+  };
+
+  const handleExportReport = (statusToExport: string, typeToExport: string) => {
+    const filtered = requests.filter(req => {
+      // Type filter
+      if (typeToExport !== 'all' && req.type !== typeToExport) return false;
+      // Status filter
+      if (statusToExport === 'all') return true;
+      if (statusToExport === 'pending_all' || statusToExport === 'pending') {
+        return req.status === 'pending_resume_team' || req.status.startsWith('pending');
+      }
+      return req.status === statusToExport;
+    });
+
+    if (filtered.length === 0) {
+      showToast('No records found for the selected export filters', 'error');
+      return;
+    }
+
+    const statusMap: Record<string, string> = {
+      pending_resume_team: 'Pending Resume Team',
+      completed: 'Completed',
+      rejected: 'Rejected'
+    };
+
+    const typeMap: Record<string, string> = {
+      resume_understanding: 'Resume Understanding',
+      interview_questions: 'Interview Questions'
+    };
+
+    const exportData = filtered.map((req, idx) => {
+      const candidate = candidates.find(c => c.id === req.candidate_id);
+      const recruiter = team.find(u => String(u.id) === String(req.recruiter_id));
+      const csUser = team.find(u => String(u.id) === String(candidate?.assigned_cs));
+      const mktLeader = team.find(u => String(u.id) === String(candidate?.assigned_marketing_leader));
+      
+      const formattedCreated = req.created_at ? new Date(req.created_at).toLocaleString() : 'N/A';
+      const formattedUpdated = req.updated_at ? new Date(req.updated_at).toLocaleString() : 'N/A';
+      const formattedCompleted = req.completed_at 
+        ? new Date(req.completed_at).toLocaleString() 
+        : (req.status === 'completed' ? new Date(req.updated_at).toLocaleString() : 'N/A');
+
+      const completedBy = req.completed_by_name || (req.status === 'completed' ? 'Resume Team' : 'N/A');
+
+      return {
+        'S.No': idx + 1,
+        'Request ID': req.id,
+        'Request Type': typeMap[req.type] || req.type,
+        'Candidate Name': candidate?.full_name || 'Unknown',
+        'Candidate Email': candidate?.email || 'N/A',
+        'Candidate Phone': candidate?.phone || 'N/A',
+        'Domain / Tech Stack': candidate?.domain_interested || candidate?.job_interest || 'N/A',
+        'Target Role': candidate?.job_interest || 'N/A',
+        'Current Stage': candidate?.current_stage ? candidate.current_stage.replace('_', ' ').toUpperCase() : 'N/A',
+        'Requested By (Recruiter)': recruiter?.display_name || recruiter?.username || req.recruiter_id || 'Unassigned',
+        'Assigned CS Person': csUser?.display_name || 'Unassigned',
+        'Assigned Marketing Leader': mktLeader?.display_name || 'Unassigned',
+        'Status': statusMap[req.status] || req.status,
+        'Request Date & Time': formattedCreated,
+        'Requester Query / Instructions': req.details || '',
+        'Resume Team Analysis / Notes': req.resume_team_notes || '',
+        'Completed By': completedBy,
+        'Completed Date & Time': formattedCompleted,
+        'Deliverable Document Name': req.document_filename || '',
+        'Deliverable Document URL': req.document_url || '',
+        'Last Updated At': formattedUpdated
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Resume Prep Log');
+    
+    const statusLabel = statusToExport === 'all' ? 'All_Statuses' : statusToExport;
+    const typeLabel = typeToExport === 'all' ? 'All_Types' : typeToExport;
+    const fileName = `Resume_Prep_Log_Report_${typeLabel}_${statusLabel}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+    showToast(`Exported ${filtered.length} records to Excel report`, 'success');
+    setIsExportModalOpen(false);
   };
 
   const handleDelete = async (requestId: string) => {
@@ -283,6 +374,13 @@ export const ResumePrepLog: React.FC = () => {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setIsExportModalOpen(true)}
+            className="flex items-center gap-2 px-5 py-3 border border-border-primary hover:border-text-secondary/35 text-text-primary rounded-2xl text-sm font-bold bg-bg-secondary hover:shadow transition-all cursor-pointer"
+          >
+            <Download className="w-4 h-4 text-accent-blue" />
+            <span>Export Report</span>
+          </button>
           {(user?.role === 'jpc_recruiter' || user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager' || user?.role === 'jpc_cs' || user?.role === 'jpc_marketing') && (
             <button 
               onClick={() => {
@@ -431,16 +529,38 @@ export const ResumePrepLog: React.FC = () => {
                       )}
 
                       {req.document_url && (
-                        <div className="flex items-center gap-2 pt-2">
-                          <FileText className="w-5 h-5 text-accent-green" />
-                          <span className="text-sm font-bold text-text-primary">Deliverable Document:</span>
+                        <div className="flex flex-wrap items-center gap-2 pt-2">
+                          <span className="text-xs font-bold text-text-primary">Deliverable Document:</span>
                           <button 
-                            onClick={() => handleViewFile(req.document_url || '', req.document_filename || 'analysis.pdf')}
-                            className="text-sm text-accent-blue hover:underline hover:text-accent-blue/80 flex items-center gap-1.5 font-bold cursor-pointer"
+                            onClick={() => handleViewFile(req.document_url || '', req.document_filename || 'document.pdf')}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 bg-accent-blue/10 hover:bg-accent-blue/20 text-accent-blue font-bold text-xs rounded-xl border border-accent-blue/20 transition-all cursor-pointer shadow-sm"
                           >
-                            <ExternalLink className="w-4 h-4" />
-                            {req.document_filename || 'View / Download Evaluation'}
+                            <Download className="w-3.5 h-3.5" />
+                            <span>View / Download Document</span>
+                            {req.document_filename && (
+                              <span className="text-[11px] text-text-muted font-normal underline decoration-dotted">
+                                ({req.document_filename})
+                              </span>
+                            )}
                           </button>
+                        </div>
+                      )}
+
+                      {req.status === 'completed' && (
+                        <div className="flex flex-wrap items-center gap-3 p-3 bg-accent-green/5 border border-accent-green/20 rounded-2xl mt-2">
+                          <div className="flex items-center gap-1.5 text-xs text-accent-green font-bold">
+                            <CheckCircle2 className="w-4 h-4 shrink-0" />
+                            <span>Completed By:</span>
+                            <span className="text-text-primary font-black">{req.completed_by_name || 'Resume Team'}</span>
+                          </div>
+                          <div className="h-3 w-px bg-accent-green/20 hidden sm:block" />
+                          <div className="flex items-center gap-1.5 text-xs text-text-secondary">
+                            <Calendar className="w-3.5 h-3.5 text-text-muted shrink-0" />
+                            <span>Completed Date:</span>
+                            <span className="font-bold text-text-primary">
+                              {new Date(req.completed_at || req.updated_at).toLocaleDateString()} at {new Date(req.completed_at || req.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
                         </div>
                       )}
                     </div>
@@ -473,12 +593,18 @@ export const ResumePrepLog: React.FC = () => {
                           {req.status === 'completed' ? (
                             <div className="flex flex-col items-center gap-1.5 text-accent-green">
                               <CheckCircle2 className="w-7 h-7" />
-                              <span className="font-bold text-xs">Evaluated & Completed</span>
+                              <span className="font-bold text-xs uppercase tracking-wider">Evaluated & Completed</span>
+                              <span className="text-[11px] font-bold text-text-primary">
+                                By: {req.completed_by_name || 'Resume Team'}
+                              </span>
+                              <span className="text-[10px] text-text-muted">
+                                {new Date(req.completed_at || req.updated_at).toLocaleDateString()} {new Date(req.completed_at || req.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
                             </div>
                           ) : (
                             <div className="flex flex-col items-center gap-1.5 text-accent-red">
                               <XCircle className="w-7 h-7" />
-                              <span className="font-bold text-xs">Reconciliation Rejected</span>
+                              <span className="font-bold text-xs">Request Rejected</span>
                             </div>
                           )}
                         </div>
@@ -769,6 +895,95 @@ export const ResumePrepLog: React.FC = () => {
                   </button>
                 </div>
               </form>
+            </div>
+          </motion.div>
+        </div>
+      )}
+      {/* Export Report Modal */}
+      {isExportModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="bg-bg-secondary w-full max-w-md rounded-[32px] shadow-2xl overflow-hidden border border-border-primary p-8"
+          >
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-accent-blue/10 rounded-2xl">
+                  <Download className="w-6 h-6 text-accent-blue" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-text-primary">Export Prep Log</h2>
+                  <p className="text-xs text-text-secondary">Comprehensive report with full tracking</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setIsExportModalOpen(false)}
+                className="p-2 hover:bg-bg-tertiary rounded-xl text-text-muted hover:text-text-primary transition-all cursor-pointer"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-5">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-text-muted uppercase tracking-wider px-1">
+                  Request Type Filter
+                </label>
+                <select
+                  value={exportTypeFilter}
+                  onChange={(e) => setExportTypeFilter(e.target.value)}
+                  className="w-full px-4 py-3 bg-bg-tertiary border border-border-primary rounded-2xl text-sm font-semibold text-text-primary focus:outline-none focus:ring-2 focus:ring-accent-blue/20 cursor-pointer"
+                >
+                  <option value="all">All Request Types ({requests.length} total)</option>
+                  <option value="resume_understanding">Resume Understanding ({requests.filter(r => r.type === 'resume_understanding').length})</option>
+                  <option value="interview_questions">Interview Questions ({requests.filter(r => r.type === 'interview_questions').length})</option>
+                </select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-text-muted uppercase tracking-wider px-1">
+                  Status Filter
+                </label>
+                <select
+                  value={exportStatusFilter}
+                  onChange={(e) => setExportStatusFilter(e.target.value)}
+                  className="w-full px-4 py-3 bg-bg-tertiary border border-border-primary rounded-2xl text-sm font-semibold text-text-primary focus:outline-none focus:ring-2 focus:ring-accent-blue/20 cursor-pointer"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="pending_all">Pending Resume Team ({requests.filter(r => r.status === 'pending_resume_team').length})</option>
+                  <option value="completed">Completed ({requests.filter(r => r.status === 'completed').length})</option>
+                  <option value="rejected">Rejected ({requests.filter(r => r.status === 'rejected').length})</option>
+                </select>
+              </div>
+
+              <div className="p-4 bg-bg-tertiary rounded-2xl border border-border-primary/50 text-xs text-text-secondary space-y-1.5">
+                <p className="font-bold text-text-primary">Report Highlights:</p>
+                <ul className="list-disc list-inside space-y-1 text-[11px] text-text-muted">
+                  <li>Candidate details (Name, contact, stage, domain)</li>
+                  <li>Requester details & complete analysis notes</li>
+                  <li><strong>Completed By & Completed Date/Time</strong></li>
+                  <li>Deliverable document file name & access link</li>
+                </ul>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button 
+                  type="button"
+                  onClick={() => setIsExportModalOpen(false)}
+                  className="flex-1 py-3.5 bg-bg-tertiary text-text-primary font-bold rounded-2xl hover:bg-bg-tertiary/80 transition-all text-sm cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => handleExportReport(exportStatusFilter, exportTypeFilter)}
+                  className="flex-1 py-3.5 bg-accent-blue text-white font-bold rounded-2xl hover:bg-accent-blue/90 transition-all shadow-lg shadow-accent-blue/20 flex items-center justify-center gap-2 text-sm cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  Export Excel (.xlsx)
+                </button>
+              </div>
             </div>
           </motion.div>
         </div>

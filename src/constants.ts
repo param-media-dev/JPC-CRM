@@ -72,7 +72,7 @@ export const ROLE_PERMISSIONS: Record<Role, { allowedStages: Stage[] | 'ALL'; ad
   jpc_sales: { allowedStages: ['lead_generation', 'sales'] },
   jpc_cs: { allowedStages: 'ALL' },
   jpc_compliance_person: { allowedStages: 'ALL' },
-  jpc_resume: { allowedStages: ['resume_team'] },
+  jpc_resume: { allowedStages: ['resume_team', 'marketing_active', 'interviewing'] },
   jpc_marketing: { allowedStages: ['marketing_leader', 'marketing_active', 'application_tracking', 'interviewing'] },
   jpc_marketing_support: { allowedStages: ['marketing_active', 'application_tracking', 'interviewing'] },
   jpc_recruiter: { allowedStages: ['recruiter', 'sys_admin', 'marketing_active', 'application_tracking', 'interviewing'] },

@@ -253,3 +253,33 @@ export const handleViewFile = async (url: string, filename: string = 'file') => 
     }, 200);
   }
 };
+
+export const getFileBinary = async (url: string): Promise<{ data: Uint8Array; mimeType: string } | null> => {
+  if (!url) return null;
+  try {
+    const resolvedUrl = await resolveUrl(url);
+    if (!resolvedUrl) return null;
+
+    if (resolvedUrl.startsWith('data:')) {
+      const parts = resolvedUrl.split(',');
+      if (parts.length < 2) return null;
+      const byteString = atob(parts[1]);
+      const mimeString = parts[0].split(':')[1]?.split(';')[0] || 'application/pdf';
+      const ab = new ArrayBuffer(byteString.length);
+      const ia = new Uint8Array(ab);
+      for (let i = 0; i < byteString.length; i++) {
+        ia[i] = byteString.charCodeAt(i);
+      }
+      return { data: ia, mimeType: mimeString };
+    } else {
+      const resp = await fetch(resolvedUrl);
+      const buf = await resp.arrayBuffer();
+      const mime = resp.headers.get('content-type') || 'application/pdf';
+      return { data: new Uint8Array(buf), mimeType: mime };
+    }
+  } catch (err) {
+    console.error('Failed to get file binary:', err);
+    return null;
+  }
+};
+

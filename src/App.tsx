@@ -29,6 +29,7 @@ const RTRLogBook = lazy(() => import('./pages/RTRLogBook').then(m => ({ default:
 const ResumePrepLog = lazy(() => import('./pages/ResumePrepLog').then(m => ({ default: m.ResumePrepLog })));
 const TargetDashboard = lazy(() => import('./pages/TargetDashboard').then(m => ({ default: m.TargetDashboard })));
 const CVRepository = lazy(() => import('./pages/CVRepository').then(m => ({ default: m.CVRepository })));
+const DomainResumeRepository = lazy(() => import('./pages/DomainResumeRepository').then(m => ({ default: m.DomainResumeRepository })));
 const FeatureAnnouncements = lazy(() => import('./pages/FeatureAnnouncements').then(m => ({ default: m.FeatureAnnouncements })));
 const InterviewSupportDashboard = lazy(() => import('./pages/InterviewSupport/Dashboard').then(m => ({ default: m.InterviewSupportDashboard })));
 const ProxyDashboard = lazy(() => import('./pages/InterviewSupport/ProxyDashboard').then(m => ({ default: m.ProxyDashboard })));
@@ -157,6 +158,9 @@ const AppContent: React.FC = () => {
       case '#cv-repository':
         if (user?.role !== 'administrator' && user?.role !== 'jpc_sysadmin' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_cs' && user?.role !== 'jpc_compliance_person' && user?.role !== 'jpc_resume' && user?.role !== 'jpc_marketing') return <Dashboard />;
         return <CVRepository />;
+      case '#domain-resumes':
+        if (user?.role !== 'administrator' && user?.role !== 'jpc_sysadmin' && user?.role !== 'jpc_manager' && user?.role !== 'jpc_cs' && user?.role !== 'jpc_compliance_person' && user?.role !== 'jpc_recruiter' && user?.role !== 'jpc_resume' && user?.role !== 'jpc_marketing') return <Dashboard />;
+        return <DomainResumeRepository />;
       case '#feature-alerts':
         return <FeatureAnnouncements />;
       case '#interviews': 
