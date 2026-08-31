@@ -1,11 +1,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Modal } from './Modal';
 import { STAGES, LEAD_SOURCES } from '../constants';
-import { generateId, saveCandidate, seedQCChecklist, logActivity, checkDuplicateCandidate } from '../services/storage';
+import { 
+  generateId, 
+  saveCandidate, 
+  seedQCChecklist, 
+  logActivity, 
+  checkDuplicateCandidate,
+  batchAdvanceLeadRoundRobin,
+  addNotification
+} from '../services/storage';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { Candidate, Stage, User } from '../types';
-import { Upload, FileText, CheckCircle, AlertCircle, Loader2, Download, Table } from 'lucide-react';
+import { Upload, FileText, CheckCircle, AlertCircle, Loader2, Download, Table, RotateCw, Users } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import Papa from 'papaparse';
 import { collection, getDocs } from 'firebase/firestore';
@@ -24,6 +32,7 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
   const [importProgress, setImportProgress] = useState(0);
   const [parsedData, setParsedData] = useState<any[]>([]);
   const [selectedStage, setSelectedStage] = useState<Stage>('lead_generation');
+  const [autoAssignRoundRobin, setAutoAssignRoundRobin] = useState(true);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -133,20 +142,53 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
     let failCount = 0;
     const total = parsedData.length;
 
-    for (let i = 0; i < total; i++) {
-      const row = parsedData[i];
-      // Normalize row keys (trim spaces)
+    // Pre-process valid candidates for batch round-robin assignment
+    const preparedCandidates: { id: string; name: string; row: any; index: number }[] = [];
+    parsedData.forEach((rawRow, idx) => {
       const normalizedRow: any = {};
-      Object.keys(row).forEach(key => {
-        normalizedRow[key.trim()] = row[key];
+      Object.keys(rawRow).forEach(key => {
+        normalizedRow[key.trim()] = rawRow[key];
       });
-
       const fullName = (normalizedRow.full_name || normalizedRow.Name || normalizedRow['Full Name'] || normalizedRow['Candidate Name'] || '').toString().trim();
+      const phone = (normalizedRow.phone || normalizedRow.Phone || normalizedRow['Phone Number'] || normalizedRow['Moblie Nomber'] || normalizedRow['Moblie Nomber '] || '').toString().trim();
+      if (fullName && phone) {
+        preparedCandidates.push({
+          id: generateId(),
+          name: fullName,
+          row: normalizedRow,
+          index: idx
+        });
+      }
+    });
+
+    let roundRobinMap = new Map<string, User>();
+    if (autoAssignRoundRobin && preparedCandidates.length > 0) {
+      try {
+        roundRobinMap = await batchAdvanceLeadRoundRobin(preparedCandidates.map(c => ({ id: c.id, name: c.name })));
+      } catch (rrErr) {
+        console.error('Error pre-calculating batch round robin:', rrErr);
+      }
+    }
+
+    const prepMapByIndex = new Map<number, { id: string; name: string; row: any }>();
+    preparedCandidates.forEach(p => prepMapByIndex.set(p.index, p));
+
+    for (let i = 0; i < total; i++) {
+      const prepItem = prepMapByIndex.get(i);
+      if (!prepItem) {
+        failCount++;
+        setImportProgress(Math.round(((i + 1) / total) * 100));
+        continue;
+      }
+
+      const normalizedRow = prepItem.row;
+      const fullName = prepItem.name;
       const phone = (normalizedRow.phone || normalizedRow.Phone || normalizedRow['Phone Number'] || normalizedRow['Moblie Nomber'] || normalizedRow['Moblie Nomber '] || '').toString().trim();
       const email = (normalizedRow.email || normalizedRow.Email || '').toString().trim();
       
       const tlNameInput = normalizedRow['Team Leader'] || normalizedRow.team_leader || normalizedRow.Leader;
       const recruiterNameInput = normalizedRow.Recruiter || normalizedRow.recruiter;
+      const salesNameInput = normalizedRow.Sales || normalizedRow.sales || normalizedRow['Assigned Sales'] || normalizedRow['Sales Person'];
 
       const findUserIdByName = (name: any) => {
         if (!name) return null;
@@ -163,6 +205,12 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
 
       const assignedLeaderId = findUserIdByName(tlNameInput);
       const assignedRecruiterId = findUserIdByName(recruiterNameInput);
+      const explicitSalesId = findUserIdByName(salesNameInput);
+
+      // Determine assigned salesperson
+      const rrUser = roundRobinMap.get(prepItem.id);
+      const finalSalesId = explicitSalesId || (rrUser ? String(rrUser.id) : null);
+      const finalSalesName = explicitSalesId ? salesNameInput : (rrUser ? rrUser.display_name : null);
       
       // Determine stage: priority to CSV column, fallback to selected stage
       let candidateStage: Stage = selectedStage;
@@ -194,28 +242,16 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
         }
       }
 
-      if (!fullName || !phone) {
-        failCount++;
-        continue;
-      }
-
       try {
-        // Quick check for duplicates (optional, might slow down bulk import significantly)
-        // const duplicateError = await checkDuplicateCandidate(phone, email, row.whatsapp);
-        // if (duplicateError) {
-        //   failCount++;
-        //   continue;
-        // }
-
-        const id = generateId();
+        const id = prepItem.id;
         const newCandidate: Candidate = {
           id,
           full_name: fullName,
           phone: phone,
-          whatsapp: row.whatsapp || phone,
+          whatsapp: normalizedRow.whatsapp || phone,
           email: email || '',
-          job_interest: row.job_interest || '',
-          domain_interested: row.domain_interested || '',
+          job_interest: normalizedRow.job_interest || '',
+          domain_interested: normalizedRow.domain_interested || '',
           location: normalizedRow.location || normalizedRow.Location || '',
           education: normalizedRow.education || normalizedRow.Education || '',
           degree: normalizedRow.degree || normalizedRow.Degree || '',
@@ -228,7 +264,7 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
           linkedin_url: normalizedRow.linkedin_url || normalizedRow.LinkedIn || '',
           lead_source: normalizedRow.lead_source || 'Bulk Import',
           lead_generated_by: user?.id || null,
-          assigned_sales: null,
+          assigned_sales: finalSalesId,
           assigned_cs: null,
           assigned_resume: null,
           assigned_marketing_leader: assignedLeaderId,
@@ -258,7 +294,20 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
 
         await saveCandidate(newCandidate, user?.id ? String(user.id) : null);
         await seedQCChecklist(id);
-        await logActivity(id, 'Candidate imported', `Candidate ${fullName} added via bulk import.`, user?.id ? String(user.id) : null);
+        const logDetail = finalSalesName
+          ? `Candidate ${fullName} added via bulk import. Assigned to ${finalSalesName} via Round-Robin rotation.`
+          : `Candidate ${fullName} added via bulk import.`;
+        await logActivity(id, 'Candidate imported', logDetail, user?.id ? String(user.id) : null);
+        
+        if (finalSalesId) {
+          addNotification({
+            recipient_id: finalSalesId,
+            sender_id: user?.id || null,
+            type: 'system_alert',
+            message: `New candidate assigned via bulk import Round-Robin: ${fullName}`
+          });
+        }
+        
         successCount++;
       } catch (err) {
         console.error('Import row error:', err);
@@ -370,6 +419,32 @@ export const BulkImportModal: React.FC<BulkImportModalProps> = ({ isOpen, onClos
                     <option key={key} value={key}>{info.label}</option>
                   ))}
                 </select>
+              </div>
+
+              <div className="p-4 bg-bg-tertiary/70 border border-border-primary rounded-2xl flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-accent-blue/10 flex items-center justify-center text-accent-blue">
+                    <RotateCw className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-text-primary flex items-center gap-1.5">
+                      <span>Round-Robin Lead Assignment</span>
+                      <span className="text-[10px] font-bold text-accent-teal bg-accent-teal/10 px-1.5 py-0.5 rounded">Auto</span>
+                    </div>
+                    <p className="text-[11px] text-text-muted mt-0.5">
+                      Distribute new leads evenly across salespeople in continuous rotation (A → B → C → A).
+                    </p>
+                  </div>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={autoAssignRoundRobin} 
+                    onChange={e => setAutoAssignRoundRobin(e.target.checked)} 
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-bg-primary peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-border-primary after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-accent-blue border border-border-primary"></div>
+                </label>
               </div>
 
               <div className="space-y-1.5">

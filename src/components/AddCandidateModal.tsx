@@ -1,11 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Modal } from './Modal';
 import { LEAD_SOURCES } from '../constants';
-import { getUsers, generateId, saveCandidate, seedQCChecklist, logActivity, addNotification, checkDuplicateCandidate, addFollowUp } from '../services/storage';
+import { 
+  generateId, 
+  saveCandidate, 
+  seedQCChecklist, 
+  logActivity, 
+  addNotification, 
+  checkDuplicateCandidate, 
+  addFollowUp,
+  advanceLeadRoundRobin
+} from '../services/storage';
 import { uploadFile } from '../services/fileService';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { Candidate, User } from '../types';
+import { Candidate } from '../types';
 import { cn } from '../lib/utils';
 import { parseResume } from '../services/aiService';
 import { FileText, Upload, Loader2, Sparkles, Brain, Search, CheckCircle } from 'lucide-react';
@@ -20,7 +29,6 @@ interface AddCandidateModalProps {
 export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, onClose, onSuccess }) => {
   const { user } = useAuth();
   const { showToast } = useToast();
-  const [salesUsers, setSalesUsers] = useState<User[]>([]);
   const [isParsing, setIsParsing] = useState(false);
   const [parsingStep, setParsingStep] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -43,14 +51,6 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
     return () => clearInterval(interval);
   }, [isParsing]);
 
-  useEffect(() => {
-    if (isOpen) {
-      getUsers().then(users => {
-        setSalesUsers(users.filter(u => u.role === 'jpc_sales'));
-      });
-    }
-  }, [isOpen]);
-
   const [formData, setFormData] = useState({
     full_name: '',
     phone: '',
@@ -61,7 +61,6 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
     location: '',
     education: '',
     lead_source: 'Facebook',
-    assigned_sales: '',
     notes: '',
     marketing_entity: [] as ('sivium' | 'recruiter')[],
     schedule_call_date: '',
@@ -173,11 +172,6 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
       return;
     }
 
-    if (!formData.assigned_sales) {
-      showToast('Assigned Sales is required', 'error');
-      return;
-    }
-
     const duplicateError = await checkDuplicateCandidate(formData.phone, formData.email, formData.whatsapp);
     if (duplicateError) {
       showToast(duplicateError, 'error');
@@ -185,6 +179,23 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
     }
 
     const id = generateId();
+
+    // Advance Round-Robin assignment automatically
+    let finalAssignedSales: string | null = null;
+    let assignedSalesDisplayName = '';
+    try {
+      const rrResult = await advanceLeadRoundRobin(
+        id,
+        formData.full_name
+      );
+      if (rrResult?.assignedUser) {
+        finalAssignedSales = String(rrResult.assignedUser.id);
+        assignedSalesDisplayName = rrResult.assignedUser.display_name;
+      }
+    } catch (rrErr) {
+      console.error('Failed to advance round robin assignment:', rrErr);
+    }
+
     const newCandidate: Candidate = {
       id,
       full_name: formData.full_name,
@@ -205,7 +216,7 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
       linkedin_url: extraData.linkedin_url,
       lead_source: formData.lead_source,
       lead_generated_by: user?.id || null,
-      assigned_sales: formData.assigned_sales || null,
+      assigned_sales: finalAssignedSales || null,
       assigned_cs: null,
       assigned_resume: null,
       assigned_marketing_leader: null,
@@ -239,14 +250,17 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
 
     saveCandidate(newCandidate, user?.id ? String(user.id) : null);
     seedQCChecklist(id);
-    logActivity(id, 'Candidate created', `Candidate ${formData.full_name} added to the system.`, user?.id ? String(user.id) : null);
+    const assignedLogText = assignedSalesDisplayName
+      ? `Assigned to ${assignedSalesDisplayName} via Round-Robin rotation.`
+      : `Candidate ${formData.full_name} added to the system.`;
+    logActivity(id, 'Candidate created', `Candidate ${formData.full_name} added to the system. ${assignedLogText}`, user?.id ? String(user.id) : null);
     
-    if (formData.assigned_sales) {
+    if (finalAssignedSales) {
       addNotification({
-        recipient_id: formData.assigned_sales,
+        recipient_id: finalAssignedSales,
         sender_id: user?.id || null,
         type: 'system_alert',
-        message: `You have been assigned to a new candidate: ${formData.full_name}`
+        message: `You have been automatically assigned to a new candidate via Round-Robin: ${formData.full_name}`
       });
     }
 
@@ -277,7 +291,6 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
       location: '',
       education: '',
       lead_source: 'Facebook',
-      assigned_sales: '',
       notes: '',
       marketing_entity: [],
       schedule_call_date: '',
@@ -468,19 +481,6 @@ export const AddCandidateModal: React.FC<AddCandidateModalProps> = ({ isOpen, on
           >
             {LEAD_SOURCES.map(source => (
               <option key={source} value={source}>{source}</option>
-            ))}
-          </select>
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-bold text-text-secondary uppercase tracking-wider">Assigned Sales</label>
-          <select
-            value={formData.assigned_sales}
-            onChange={e => setFormData({ ...formData, assigned_sales: e.target.value })}
-            className="w-full bg-bg-tertiary border border-border-primary rounded-xl px-4 py-2.5 text-text-primary focus:outline-none focus:border-accent-blue transition-colors"
-          >
-            <option value="">Select Sales Person</option>
-            {salesUsers.map(u => (
-              <option key={u.id} value={u.id}>{u.display_name}</option>
             ))}
           </select>
         </div>

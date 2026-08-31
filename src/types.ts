@@ -446,3 +446,23 @@ export interface IPVerifyResponse {
   error?: string;
   message?: string;
 }
+
+export interface LeadRoundRobinAssignment {
+  candidate_id: string;
+  candidate_name: string;
+  assigned_to_user_id: string | number;
+  assigned_to_name: string;
+  assigned_at: string;
+}
+
+export interface LeadRoundRobinConfig {
+  id: string;
+  last_assigned_user_id: string | number | null;
+  last_assigned_index: number;
+  last_assigned_at: string | null;
+  enabled: boolean;
+  excluded_user_ids?: (string | number)[];
+  custom_order_user_ids?: (string | number)[];
+  total_leads_assigned?: number;
+  recent_assignments?: LeadRoundRobinAssignment[];
+}

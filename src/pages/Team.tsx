@@ -8,11 +8,13 @@ import { User, UserRole, Candidate } from '../types';
 import { Modal } from '../components/Modal';
 import { SMTPConfigModal } from '../components/SMTPConfigModal';
 import { MarketingProfileDashboard } from '../components/MarketingProfileDashboard';
+import { LeadRoundRobinDashboard } from '../components/LeadRoundRobinDashboard';
 import { useToast } from '../contexts/ToastContext';
 import { deleteDoc, doc, setDoc, getDocs, collection, writeBatch, query, where, updateDoc } from 'firebase/firestore';
 import { db, firebaseConfig } from '../firebase';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signOut as secondarySignOut, updateProfile, createUserWithEmailAndPassword } from 'firebase/auth';
+import { RotateCw } from 'lucide-react';
 
 const ROLES: { value: UserRole; label: string; icon: any; color: string }[] = [
   { value: 'administrator', label: 'Administrator', icon: ShieldCheck, color: 'text-accent-red' },
@@ -63,7 +65,7 @@ export const Team: React.FC = () => {
   });
 
   const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [activeTab, setActiveTab] = useState<'members' | 'marketing_profiles'>('members');
+  const [activeTab, setActiveTab] = useState<'members' | 'marketing_profiles' | 'round_robin'>('members');
 
   useEffect(() => {
     if (!isAuthReady) return;
@@ -660,11 +662,11 @@ export const Team: React.FC = () => {
       </div>
 
       {/* Tab Switcher */}
-      <div className="flex border-b border-border-primary mb-8 gap-6">
+      <div className="flex border-b border-border-primary mb-8 gap-6 overflow-x-auto">
         <button
           onClick={() => setActiveTab('members')}
           className={cn(
-            "pb-4 px-1 text-sm font-bold tracking-tight border-b-2 transition-all flex items-center gap-2",
+            "pb-4 px-1 text-sm font-bold tracking-tight border-b-2 transition-all flex items-center gap-2 whitespace-nowrap",
             activeTab === 'members'
               ? "border-accent-blue text-accent-blue"
               : "border-transparent text-text-secondary hover:text-text-primary"
@@ -674,9 +676,24 @@ export const Team: React.FC = () => {
           <span>Team Members ({team.length})</span>
         </button>
         <button
+          onClick={() => setActiveTab('round_robin')}
+          className={cn(
+            "pb-4 px-1 text-sm font-bold tracking-tight border-b-2 transition-all flex items-center gap-2 whitespace-nowrap",
+            activeTab === 'round_robin'
+              ? "border-accent-teal text-accent-teal"
+              : "border-transparent text-text-secondary hover:text-text-primary"
+          )}
+        >
+          <RotateCw className="w-4 h-4" />
+          <span>Lead Round-Robin Rotation</span>
+          <span className="px-1.5 py-0.5 bg-accent-teal/10 text-accent-teal rounded-md text-[10px] font-extrabold uppercase">
+            Auto Sales
+          </span>
+        </button>
+        <button
           onClick={() => setActiveTab('marketing_profiles')}
           className={cn(
-            "pb-4 px-1 text-sm font-bold tracking-tight border-b-2 transition-all flex items-center gap-2",
+            "pb-4 px-1 text-sm font-bold tracking-tight border-b-2 transition-all flex items-center gap-2 whitespace-nowrap",
             activeTab === 'marketing_profiles'
               ? "border-accent-blue text-accent-blue"
               : "border-transparent text-text-secondary hover:text-text-primary"
@@ -836,6 +853,11 @@ export const Team: React.FC = () => {
             );
           })}
         </div>
+      ) : activeTab === 'round_robin' ? (
+        <LeadRoundRobinDashboard
+          allUsers={team}
+          isAdminOrManager={user?.role === 'administrator' || user?.role === 'jpc_sysadmin' || user?.role === 'jpc_manager'}
+        />
       ) : (
         <MarketingProfileDashboard
           team={team}

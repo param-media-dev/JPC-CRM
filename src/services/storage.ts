@@ -12,7 +12,8 @@ import {
   orderBy, 
   onSnapshot,
   writeBatch,
-  limit
+  limit,
+  runTransaction
 } from 'firebase/firestore';
 import { clearPreviousCalendarEvents } from './calendarService';
 import { db, auth } from '../firebase';
@@ -34,7 +35,9 @@ import {
   InterviewActivityLog,
   Notification as AppNotification,
   FeatureAnnouncement,
-  ResumeSubstitutionRequest
+  ResumeSubstitutionRequest,
+  LeadRoundRobinConfig,
+  LeadRoundRobinAssignment
 } from '../types';
 
 export enum OperationType {
@@ -789,6 +792,286 @@ export const deleteFeatureAnnouncement = async (id: string) => {
     await deleteDoc(doc(db, 'jpc_feature_announcements', id));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, `jpc_feature_announcements/${id}`);
+  }
+};
+
+// Lead Round-Robin Auto-Assignment System
+export const DEFAULT_ROUND_ROBIN_CONFIG: LeadRoundRobinConfig = {
+  id: 'lead_round_robin',
+  last_assigned_user_id: null,
+  last_assigned_index: -1,
+  last_assigned_at: null,
+  enabled: true,
+  excluded_user_ids: [],
+  custom_order_user_ids: [],
+  total_leads_assigned: 0,
+  recent_assignments: []
+};
+
+export const getLeadRoundRobinConfig = async (): Promise<LeadRoundRobinConfig> => {
+  try {
+    const docRef = doc(db, 'jpc_settings', 'lead_round_robin');
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) {
+      return { ...DEFAULT_ROUND_ROBIN_CONFIG, ...docSnap.data() } as LeadRoundRobinConfig;
+    }
+    return DEFAULT_ROUND_ROBIN_CONFIG;
+  } catch (error) {
+    console.error('Error fetching lead round robin config:', error);
+    return DEFAULT_ROUND_ROBIN_CONFIG;
+  }
+};
+
+export const subscribeToLeadRoundRobin = (callback: (config: LeadRoundRobinConfig) => void) => {
+  const docRef = doc(db, 'jpc_settings', 'lead_round_robin');
+  return onSnapshot(docRef, (docSnap) => {
+    if (docSnap.exists()) {
+      callback({ ...DEFAULT_ROUND_ROBIN_CONFIG, ...docSnap.data() } as LeadRoundRobinConfig);
+    } else {
+      callback(DEFAULT_ROUND_ROBIN_CONFIG);
+    }
+  }, (error) => {
+    console.error('Error subscribing to lead round robin config:', error);
+  });
+};
+
+export const updateLeadRoundRobinConfig = async (updates: Partial<LeadRoundRobinConfig>) => {
+  try {
+    const docRef = doc(db, 'jpc_settings', 'lead_round_robin');
+    const docSnap = await getDoc(docRef);
+    if (!docSnap.exists()) {
+      await setDoc(docRef, { ...DEFAULT_ROUND_ROBIN_CONFIG, ...updates, id: 'lead_round_robin' });
+    } else {
+      await updateDoc(docRef, updates);
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, 'jpc_settings/lead_round_robin');
+  }
+};
+
+export const getEligibleSalesUsers = (allUsers: User[], config?: LeadRoundRobinConfig): User[] => {
+  const allSales = allUsers.filter(u => u.role === 'jpc_sales' && !u.deleted_at);
+  if (allSales.length === 0) return [];
+
+  // Exclude users on leave
+  let activeSales = allSales.filter(u => !u.is_on_leave);
+  // If everyone is on leave, fall back to all sales users
+  if (activeSales.length === 0) activeSales = allSales;
+
+  // Exclude manually excluded user IDs if specified in settings
+  const excludedIds = (config?.excluded_user_ids || []).map(id => String(id));
+  if (excludedIds.length > 0) {
+    const filtered = activeSales.filter(u => !excludedIds.includes(String(u.id)));
+    if (filtered.length > 0) {
+      activeSales = filtered;
+    }
+  }
+
+  // Handle custom order if configured
+  const customOrder = (config?.custom_order_user_ids || []).map(id => String(id));
+  if (customOrder.length > 0) {
+    const ordered: User[] = [];
+    customOrder.forEach(id => {
+      const found = activeSales.find(u => String(u.id) === id);
+      if (found) ordered.push(found);
+    });
+    // Add any remaining sales reps not listed in custom order sorted by display name
+    const remaining = activeSales
+      .filter(u => !customOrder.includes(String(u.id)))
+      .sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
+    return [...ordered, ...remaining];
+  }
+
+  // Default deterministic ordering: alphabetical by display_name
+  return [...activeSales].sort((a, b) => (a.display_name || '').localeCompare(b.display_name || ''));
+};
+
+export const getNextSalespersonPreview = async (): Promise<{
+  nextUser: User | null;
+  nextIndex: number;
+  allEligibleUsers: User[];
+  config: LeadRoundRobinConfig;
+}> => {
+  const [config, users] = await Promise.all([
+    getLeadRoundRobinConfig(),
+    getUsers()
+  ]);
+
+  const eligible = getEligibleSalesUsers(users, config);
+  if (eligible.length === 0) {
+    return { nextUser: null, nextIndex: 0, allEligibleUsers: [], config };
+  }
+
+  // Find index of last assigned user in current eligible list
+  let nextIndex = 0;
+  if (config.last_assigned_user_id) {
+    const lastUserIdx = eligible.findIndex(u => String(u.id) === String(config.last_assigned_user_id));
+    if (lastUserIdx !== -1) {
+      nextIndex = (lastUserIdx + 1) % eligible.length;
+    } else {
+      // If user was removed or not found, advance from last known index
+      nextIndex = ((config.last_assigned_index ?? -1) + 1) % eligible.length;
+    }
+  }
+
+  return {
+    nextUser: eligible[nextIndex] || eligible[0],
+    nextIndex,
+    allEligibleUsers: eligible,
+    config
+  };
+};
+
+export const advanceLeadRoundRobin = async (
+  candidateId: string,
+  candidateName: string,
+  overrideUserId?: string | number | null
+): Promise<{ assignedUser: User; assignedUserId: string | number; index: number }> => {
+  try {
+    const docRef = doc(db, 'jpc_settings', 'lead_round_robin');
+    const users = await getUsers();
+    
+    // We execute the assignment logic
+    const docSnap = await getDoc(docRef);
+    const config: LeadRoundRobinConfig = docSnap.exists()
+      ? ({ ...DEFAULT_ROUND_ROBIN_CONFIG, ...docSnap.data() } as LeadRoundRobinConfig)
+      : DEFAULT_ROUND_ROBIN_CONFIG;
+
+    const eligible = getEligibleSalesUsers(users, config);
+    if (eligible.length === 0) {
+      // Fallback: any user or self
+      const fallbackUser = users.find(u => u.role === 'jpc_sales') || users[0];
+      const fallbackId = fallbackUser ? fallbackUser.id : (overrideUserId || 'unassigned');
+      return { assignedUser: fallbackUser, assignedUserId: fallbackId, index: 0 };
+    }
+
+    let assignedUser: User;
+    let nextIndex: number;
+
+    if (overrideUserId) {
+      // If the user manually chose someone else, respect their choice
+      const matched = users.find(u => String(u.id) === String(overrideUserId));
+      assignedUser = matched || eligible[0];
+      const idxInEligible = eligible.findIndex(u => String(u.id) === String(assignedUser.id));
+      nextIndex = idxInEligible !== -1 ? idxInEligible : config.last_assigned_index;
+    } else {
+      // Continuous Round-Robin Rotation
+      if (config.last_assigned_user_id) {
+        const lastUserIdx = eligible.findIndex(u => String(u.id) === String(config.last_assigned_user_id));
+        if (lastUserIdx !== -1) {
+          nextIndex = (lastUserIdx + 1) % eligible.length;
+        } else {
+          nextIndex = ((config.last_assigned_index ?? -1) + 1) % eligible.length;
+        }
+      } else {
+        nextIndex = 0;
+      }
+      assignedUser = eligible[nextIndex];
+    }
+
+    const newAssignment: LeadRoundRobinAssignment = {
+      candidate_id: candidateId,
+      candidate_name: candidateName,
+      assigned_to_user_id: assignedUser.id,
+      assigned_to_name: assignedUser.display_name,
+      assigned_at: new Date().toISOString()
+    };
+
+    const recent = [newAssignment, ...(config.recent_assignments || [])].slice(0, 30);
+
+    const updatedConfig: Partial<LeadRoundRobinConfig> = {
+      id: 'lead_round_robin',
+      last_assigned_user_id: String(assignedUser.id),
+      last_assigned_index: nextIndex,
+      last_assigned_at: new Date().toISOString(),
+      total_leads_assigned: (config.total_leads_assigned || 0) + 1,
+      recent_assignments: recent
+    };
+
+    await setDoc(docRef, { ...config, ...updatedConfig }, { merge: true });
+
+    return { assignedUser, assignedUserId: assignedUser.id, index: nextIndex };
+  } catch (error) {
+    console.error('Error advancing lead round robin:', error);
+    // Safe fallback
+    const users = await getUsers();
+    const fallback = users.find(u => u.role === 'jpc_sales') || users[0];
+    return { assignedUser: fallback, assignedUserId: fallback?.id || '1', index: 0 };
+  }
+};
+
+export const batchAdvanceLeadRoundRobin = async (
+  candidates: { id: string; name: string }[]
+): Promise<Map<string, User>> => {
+  const result = new Map<string, User>();
+  if (candidates.length === 0) return result;
+
+  try {
+    const docRef = doc(db, 'jpc_settings', 'lead_round_robin');
+    const users = await getUsers();
+    const docSnap = await getDoc(docRef);
+    const config: LeadRoundRobinConfig = docSnap.exists()
+      ? ({ ...DEFAULT_ROUND_ROBIN_CONFIG, ...docSnap.data() } as LeadRoundRobinConfig)
+      : DEFAULT_ROUND_ROBIN_CONFIG;
+
+    const eligible = getEligibleSalesUsers(users, config);
+    if (eligible.length === 0) {
+      const fallback = users.find(u => u.role === 'jpc_sales') || users[0];
+      candidates.forEach(c => result.set(c.id, fallback));
+      return result;
+    }
+
+    let currentIndex = 0;
+    if (config.last_assigned_user_id) {
+      const lastUserIdx = eligible.findIndex(u => String(u.id) === String(config.last_assigned_user_id));
+      if (lastUserIdx !== -1) {
+        currentIndex = (lastUserIdx + 1) % eligible.length;
+      } else {
+        currentIndex = ((config.last_assigned_index ?? -1) + 1) % eligible.length;
+      }
+    }
+
+    const newAssignments: LeadRoundRobinAssignment[] = [];
+
+    for (let i = 0; i < candidates.length; i++) {
+      const cand = candidates[i];
+      const assignedUser = eligible[currentIndex];
+      result.set(cand.id, assignedUser);
+
+      newAssignments.push({
+        candidate_id: cand.id,
+        candidate_name: cand.name,
+        assigned_to_user_id: assignedUser.id,
+        assigned_to_name: assignedUser.display_name,
+        assigned_at: new Date().toISOString()
+      });
+
+      currentIndex = (currentIndex + 1) % eligible.length;
+    }
+
+    // The last assigned index was the one assigned to the last candidate
+    const finalAssignedIndex = (currentIndex - 1 + eligible.length) % eligible.length;
+    const finalAssignedUser = eligible[finalAssignedIndex];
+
+    const recent = [...newAssignments.reverse(), ...(config.recent_assignments || [])].slice(0, 40);
+
+    const updatedConfig: Partial<LeadRoundRobinConfig> = {
+      id: 'lead_round_robin',
+      last_assigned_user_id: String(finalAssignedUser.id),
+      last_assigned_index: finalAssignedIndex,
+      last_assigned_at: new Date().toISOString(),
+      total_leads_assigned: (config.total_leads_assigned || 0) + candidates.length,
+      recent_assignments: recent
+    };
+
+    await setDoc(docRef, { ...config, ...updatedConfig }, { merge: true });
+    return result;
+  } catch (error) {
+    console.error('Error in batchAdvanceLeadRoundRobin:', error);
+    const users = await getUsers();
+    const fallback = users.find(u => u.role === 'jpc_sales') || users[0];
+    candidates.forEach(c => result.set(c.id, fallback));
+    return result;
   }
 };
 
