@@ -1,6 +1,6 @@
 import express from 'express';
 import path from 'path';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
@@ -1103,12 +1103,28 @@ Provide an in-depth audited compliance analysis containing:
 
 Format the response in clean, aesthetic Markdown with professional structures and bullet sub-points. Use bold headings. Avoid generic preachy greetings or self-referential intros/outros. Start directly with the Executive Performance Assessment.`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt
-    });
+    let responseText = '';
+    const modelsToTry = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-flash-latest"];
+    for (const m of modelsToTry) {
+      try {
+        const response = await ai.models.generateContent({
+          model: m,
+          contents: prompt
+        });
+        if (response.text) {
+          responseText = response.text;
+          break;
+        }
+      } catch (e) {
+        // try next model
+      }
+    }
 
-    res.json({ analysis: response.text });
+    if (responseText) {
+      res.json({ analysis: responseText });
+    } else {
+      throw new Error('No response from AI models');
+    }
   } catch (error: any) {
     // Graceful fallback to rich local ledger synthesis to keep operations active
     const analysis = generateHeuristicAudit({
@@ -1123,6 +1139,150 @@ Format the response in clean, aesthetic Markdown with professional structures an
       dailyStats
     });
     res.json({ analysis });
+  }
+});
+
+// Resume Parsing Endpoint with Gemini AI (models/gemini-3.6-flash & gemini-3.8-flash)
+app.post('/api/resume/parse', async (req, res) => {
+  const { textToParse, fileBase64, mimeType } = req.body;
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  const isKeyEmptyOrPlaceholder = !apiKey || 
+    apiKey.trim() === '' || 
+    apiKey.toLowerCase().includes('your-api-key') || 
+    apiKey === 'PLACEHOLDER' ||
+    apiKey.length < 20;
+
+  // Fallback regex extractor if no valid key or if AI fails
+  const fallbackExtract = (rawText: string) => {
+    if (!rawText) return null;
+    const emailMatch = rawText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+    const phoneMatch = rawText.match(/(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}|\b\d{10}\b/);
+    const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
+    const candidateName = lines.length > 0 ? lines[0].replace(/[^a-zA-Z\s]/g, '').slice(0, 50).trim() : '';
+
+    return {
+      full_name: candidateName,
+      phone: phoneMatch ? phoneMatch[0] : '',
+      email: emailMatch ? emailMatch[0] : '',
+      job_interest: '',
+      location: '',
+      education: '',
+      degree: '',
+      university: '',
+      graduation_year: '',
+      experience_years: '',
+      current_company: '',
+      current_designation: '',
+      skills: '',
+      linkedin_url: '',
+      notes: ''
+    };
+  };
+
+  if (isKeyEmptyOrPlaceholder) {
+    console.warn('[Resume Parse] GEMINI_API_KEY is missing or invalid in server environment. Attempting text regex fallback.');
+    const fallbackData = fallbackExtract(textToParse || '');
+    if (fallbackData && (fallbackData.email || fallbackData.phone || fallbackData.full_name)) {
+      return res.json({ candidate: fallbackData, isFallback: true });
+    }
+    return res.status(400).json({ error: 'GEMINI_API_KEY is missing or invalid. Please configure it in your Settings > Secrets.' });
+  }
+
+  try {
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build'
+        }
+      }
+    });
+
+    const parts: any[] = [];
+    if (textToParse && textToParse.length > 30) {
+      parts.push({ text: `Extract candidate information from this resume text:\n\n${textToParse}` });
+    } else if (fileBase64 && mimeType && mimeType !== 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' && mimeType !== 'application/msword') {
+      parts.push({
+        inlineData: {
+          data: fileBase64,
+          mimeType: mimeType,
+        },
+      });
+      parts.push({ text: "Extract candidate information from this resume document." });
+    } else if (textToParse) {
+      parts.push({ text: `Extract candidate information from this text:\n\n${textToParse}` });
+    } else {
+      return res.status(400).json({ error: 'No resume text or valid document provided for parsing.' });
+    }
+
+    parts.push({ text: "Return the extracted data in JSON format following the schema. If a field is not found or not stated, return an empty string for that field." });
+
+    // Try modern models: gemini-3.6-flash, gemini-3.8-flash, gemini-flash-latest
+    const modelsToTry = ["gemini-3.6-flash", "gemini-3.8-flash", "gemini-flash-latest"];
+    let lastError: any = null;
+    let parsedResult: any = null;
+
+    for (const modelName of modelsToTry) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: { parts },
+          config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                full_name: { type: Type.STRING },
+                phone: { type: Type.STRING },
+                email: { type: Type.STRING },
+                job_interest: { type: Type.STRING },
+                location: { type: Type.STRING },
+                education: { type: Type.STRING },
+                degree: { type: Type.STRING },
+                university: { type: Type.STRING },
+                graduation_year: { type: Type.STRING },
+                experience_years: { type: Type.STRING },
+                current_company: { type: Type.STRING },
+                current_designation: { type: Type.STRING },
+                skills: { type: Type.STRING },
+                linkedin_url: { type: Type.STRING },
+                notes: { type: Type.STRING },
+              }
+            },
+          },
+        });
+
+        if (response.text) {
+          parsedResult = JSON.parse(response.text.trim());
+          console.log(`[Resume Parse] Successfully parsed resume using model: ${modelName}`);
+          break;
+        }
+      } catch (mErr: any) {
+        lastError = mErr;
+        console.warn(`[Resume Parse] Model ${modelName} failed or unavailable:`, mErr.message || mErr);
+      }
+    }
+
+    if (parsedResult) {
+      return res.json({ candidate: parsedResult });
+    }
+
+    // If AI models failed, use regex fallback to extract available candidate details
+    console.error('[Resume Parse] All AI models failed, attempting fallback extraction:', lastError?.message || lastError);
+    const fallbackData = fallbackExtract(textToParse || '');
+    if (fallbackData && (fallbackData.email || fallbackData.phone || fallbackData.full_name)) {
+      return res.json({ candidate: fallbackData, isFallback: true, warning: lastError?.message });
+    }
+
+    return res.status(500).json({ error: lastError?.message || 'Failed to parse resume with AI model' });
+  } catch (error: any) {
+    console.error('[Resume Parse] Error in resume parse route:', error);
+    const fallbackData = fallbackExtract(textToParse || '');
+    if (fallbackData) {
+      return res.json({ candidate: fallbackData, isFallback: true });
+    }
+    return res.status(500).json({ error: error.message || 'Error parsing resume' });
   }
 });
 

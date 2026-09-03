@@ -85,62 +85,123 @@ export async function parseResume(fileBase64: string, mimeType: string): Promise
       textToParse = extractTextFromTXT(fileBase64);
     }
 
-    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    
-    // Switch to lite tier for fastest performance
-    
-    // If we extracted text, send text directly. Otherwise, send the document blob as fallback.
-    const parts: any[] = [];
-    if (textToParse.length > 50) {
-      parts.push({ text: `Extract candidate information from this resume text:\n\n${textToParse}` });
-    } else if (mimeType !== 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' && mimeType !== 'application/msword') {
-      parts.push({
-        inlineData: {
-          data: fileBase64,
-          mimeType: mimeType,
+    // 1. Primary approach: Server-side API endpoint with Gemini 3.6 Flash / 3.8 Flash
+    try {
+      const response = await fetch('/api/resume/parse', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify({
+          textToParse,
+          fileBase64: textToParse.length > 50 ? '' : fileBase64,
+          mimeType,
+        }),
       });
-      parts.push({ text: "Extract candidate information from this resume document." });
-    } else {
-       // If it's a docx but text parsing failed or is too short, we must return null early because Gemini doesn't support DOCX inline data.
-       return null;
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.candidate) {
+          return data.candidate as ParsedCandidate;
+        }
+      } else {
+        const errJson = await response.json().catch(() => ({}));
+        if (errJson.candidate) {
+          return errJson.candidate as ParsedCandidate;
+        }
+        console.warn('Server resume parse route returned non-OK status:', response.status, errJson);
+      }
+    } catch (apiErr) {
+      console.warn('Could not reach /api/resume/parse, attempting direct client fallback:', apiErr);
     }
 
-    parts.push({ text: "Return the data in JSON format following the provided schema. If a field is not found, return an empty string." });
+    // 2. Secondary fallback: Direct client call using gemini-3.6-flash / gemini-3.8-flash
+    const apiKey = (process.env as any).GEMINI_API_KEY;
+    if (apiKey && apiKey.length > 20) {
+      const ai = new GoogleGenAI({ apiKey });
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: { parts },
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            full_name: { type: Type.STRING },
-            phone: { type: Type.STRING },
-            email: { type: Type.STRING },
-            job_interest: { type: Type.STRING },
-            location: { type: Type.STRING },
-            education: { type: Type.STRING },
-            degree: { type: Type.STRING },
-            university: { type: Type.STRING },
-            graduation_year: { type: Type.STRING },
-            experience_years: { type: Type.STRING },
-            current_company: { type: Type.STRING },
-            current_designation: { type: Type.STRING },
-            skills: { type: Type.STRING },
-            linkedin_url: { type: Type.STRING },
-            notes: { type: Type.STRING },
+      const parts: any[] = [];
+      if (textToParse.length > 50) {
+        parts.push({ text: `Extract candidate information from this resume text:\n\n${textToParse}` });
+      } else if (mimeType !== 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' && mimeType !== 'application/msword') {
+        parts.push({
+          inlineData: {
+            data: fileBase64,
+            mimeType: mimeType,
+          },
+        });
+        parts.push({ text: "Extract candidate information from this resume document." });
+      } else {
+        return null;
+      }
+
+      parts.push({ text: "Return the data in JSON format following the provided schema. If a field is not found, return an empty string." });
+
+      const modelsToTry = ["gemini-3.6-flash", "gemini-3.8-flash", "gemini-flash-latest"];
+      for (const m of modelsToTry) {
+        try {
+          const response = await ai.models.generateContent({
+            model: m,
+            contents: { parts },
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  full_name: { type: Type.STRING },
+                  phone: { type: Type.STRING },
+                  email: { type: Type.STRING },
+                  job_interest: { type: Type.STRING },
+                  location: { type: Type.STRING },
+                  education: { type: Type.STRING },
+                  degree: { type: Type.STRING },
+                  university: { type: Type.STRING },
+                  graduation_year: { type: Type.STRING },
+                  experience_years: { type: Type.STRING },
+                  current_company: { type: Type.STRING },
+                  current_designation: { type: Type.STRING },
+                  skills: { type: Type.STRING },
+                  linkedin_url: { type: Type.STRING },
+                  notes: { type: Type.STRING },
+                }
+              },
+            },
+          });
+
+          if (response.text) {
+            return JSON.parse(response.text.trim()) as ParsedCandidate;
           }
-        },
-      },
-    });
-
-    if (response.text) {
-      return JSON.parse(response.text.trim()) as ParsedCandidate;
-    } else {
-      throw new Error('No response from AI');
+        } catch (mErr) {
+          console.warn(`Direct client model ${m} failed, trying next:`, mErr);
+        }
+      }
     }
+
+    // 3. Resilient heuristic fallback if text was extracted
+    if (textToParse) {
+      const emailMatch = textToParse.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+      const phoneMatch = textToParse.match(/(?:\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}|\b\d{10}\b/);
+      const firstLine = textToParse.split('\n').map(l => l.trim()).filter(Boolean)[0] || '';
+      return {
+        full_name: firstLine.replace(/[^a-zA-Z\s]/g, '').slice(0, 50).trim(),
+        phone: phoneMatch ? phoneMatch[0] : '',
+        email: emailMatch ? emailMatch[0] : '',
+        job_interest: '',
+        location: '',
+        education: '',
+        degree: '',
+        university: '',
+        graduation_year: '',
+        experience_years: '',
+        current_company: '',
+        current_designation: '',
+        skills: '',
+        linkedin_url: '',
+        notes: ''
+      };
+    }
+
+    throw new Error('No response from AI');
   } catch (error: any) {
     console.error("Error parsing resume:", error);
     throw new Error(`Failed to parse resume: ${error.message || error}`);
